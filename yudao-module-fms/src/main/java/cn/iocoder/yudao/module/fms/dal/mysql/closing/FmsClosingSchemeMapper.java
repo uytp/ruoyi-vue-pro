@@ -17,9 +17,16 @@ import java.util.List;
 public interface FmsClosingSchemeMapper extends BaseMapperX<FmsClosingSchemeDO> {
 
     default FmsClosingSchemeDO selectByAccountSetIdAndType(Long accountSetId, Integer type) {
-        return selectOne(new LambdaQueryWrapperX<FmsClosingSchemeDO>()
+        // 同类型方案理论上只有一个；并发补建时可能短暂出现多条，取编号最小的一条，避免 selectOne 报错
+        List<FmsClosingSchemeDO> list = selectListByAccountSetIdAndType(accountSetId, type);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    default List<FmsClosingSchemeDO> selectListByAccountSetIdAndType(Long accountSetId, Integer type) {
+        return selectList(new LambdaQueryWrapperX<FmsClosingSchemeDO>()
                 .eq(FmsClosingSchemeDO::getAccountSetId, accountSetId)
-                .eq(FmsClosingSchemeDO::getType, type));
+                .eq(FmsClosingSchemeDO::getType, type)
+                .orderByAsc(FmsClosingSchemeDO::getId));
     }
 
     default FmsClosingSchemeDO selectByIdAndAccountSetId(Long id, Long accountSetId) {

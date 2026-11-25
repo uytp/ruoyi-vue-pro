@@ -60,4 +60,7 @@ public class FmsVoucherPageReqVO extends PageParam {
     @InEnum(FmsVoucherStatusEnum.class)
     private Integer status;
 
+    @Schema(description = "是否已过账", example = "true")
+    private Boolean posted;
+
 }

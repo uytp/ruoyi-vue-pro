@@ -101,6 +101,20 @@ public class FmsVoucherEntryDO extends BaseDO {
      */
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<AuxiliaryItem> auxiliaries;
+    /**
+     * 外币币别编号；为空表示本位币分录
+     *
+     * 关联 {@link cn.iocoder.yudao.module.fms.dal.dataobject.config.FmsCurrencyDO#getId()}
+     */
+    private Long currencyId;
+    /**
+     * 汇率（外币分录记账汇率）
+     */
+    private BigDecimal exchangeRate;
+    /**
+     * 原币金额，正负号与本位币金额一致；期末调汇分录原币为 0
+     */
+    private BigDecimal originalAmount;
 
     /**
      * 辅助核算项目

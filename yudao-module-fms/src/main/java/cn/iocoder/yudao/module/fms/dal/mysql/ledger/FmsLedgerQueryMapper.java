@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.fms.dal.mysql.ledger;
 
+import cn.iocoder.yudao.module.fms.enums.voucher.FmsVoucherStatusEnum;
 import cn.iocoder.yudao.framework.mybatis.core.mapper.BaseMapperX;
 import cn.iocoder.yudao.framework.mybatis.core.query.MPJLambdaWrapperX;
 import cn.iocoder.yudao.module.fms.controller.admin.ledger.vo.FmsLedgerEntryVO;
@@ -37,8 +38,12 @@ public interface FmsLedgerQueryMapper extends BaseMapperX<FmsVoucherEntryDO> {
                         .selectAs(FmsVoucherEntryDO::getAssistCombinationId,
                                 FmsLedgerEntryVO::getAssistCombinationId)
                         .selectAs(FmsVoucherEntryDO::getAuxiliaries, FmsLedgerEntryVO::getAuxiliaries)
+                        .selectAs(FmsVoucherEntryDO::getCurrencyId, FmsLedgerEntryVO::getCurrencyId)
+                        .selectAs(FmsVoucherEntryDO::getExchangeRate, FmsLedgerEntryVO::getExchangeRate)
+                        .selectAs(FmsVoucherEntryDO::getOriginalAmount, FmsLedgerEntryVO::getOriginalAmount)
                         .eq(FmsVoucherEntryDO::getAccountSetId, accountSetId)
                         .lt(FmsVoucherDO::getVoucherTime, endTime)
+                        .ne(FmsVoucherDO::getStatus, FmsVoucherStatusEnum.VOIDED.getStatus())
                         .innerJoin(FmsVoucherDO.class, FmsVoucherDO::getId,
                                 FmsVoucherEntryDO::getVoucherId)
                         .leftJoin(FmsVoucherWordDO.class, FmsVoucherWordDO::getId,

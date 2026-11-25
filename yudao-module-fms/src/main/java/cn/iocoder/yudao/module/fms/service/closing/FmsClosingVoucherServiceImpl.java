@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.fms.service.closing;
 
+import java.util.Comparator;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjUtil;
 import cn.iocoder.yudao.framework.common.exception.ServiceException;
@@ -45,6 +46,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 import java.math.BigDecimal;
+import java.util.Deque;
+import java.util.ArrayDeque;
+import java.util.HashMap;
+import cn.iocoder.yudao.module.fms.dal.dataobject.voucher.FmsVoucherDO;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
@@ -157,7 +162,7 @@ public class FmsClosingVoucherServiceImpl implements FmsClosingVoucherService {
         List<FmsClosingVoucherDO> existingVouchers = closingVoucherMapper.selectListByClosingIdAndPeriod(
                 closing.getId(), LocalDateTimeUtils.getMonthBeginTime(month),
                 LocalDateTimeUtils.endOfMonth(LocalDateTimeUtils.getMonthBeginTime(month)));
-        deleteExistingClosingVouchers(
+        Map<Long, Deque<Integer>> reusableNumbers = deleteExistingClosingVouchers(
                 generateReqVO.getAccountSetId(), existingVouchers, userId);
         List<FmsSubjectDO> subjects = subjectService.getSubjectList(
                 generateReqVO.getAccountSetId(), null, userId);
@@ -204,7 +209,7 @@ public class FmsClosingVoucherServiceImpl implements FmsClosingVoucherService {
             voucherReqVO.setAccountSetId(generateReqVO.getAccountSetId());
             voucherReqVO.setVoucherWordId(closing.getVoucherWordId());
             voucherReqVO.setVoucherTime(voucherTime);
-            voucherReqVO.setVoucherNumber(voucherService.getNextVoucherNumber(
+            voucherReqVO.setVoucherNumber(nextVoucherNumber(reusableNumbers,
                     generateReqVO.getAccountSetId(), closing.getVoucherWordId(), voucherTime, userId));
             voucherReqVO.setEntries(entries);
             Long voucherId = voucherService.createVoucher(voucherReqVO, userId);
@@ -250,7 +255,8 @@ public class FmsClosingVoucherServiceImpl implements FmsClosingVoucherService {
         LocalDateTime monthBeginTime = LocalDateTimeUtils.getMonthBeginTime(month);
         List<FmsClosingVoucherDO> existingVouchers = closingVoucherMapper.selectListByClosingIdAndPeriod(
                 closing.getId(), monthBeginTime, LocalDateTimeUtils.endOfMonth(monthBeginTime));
-        deleteExistingClosingVouchers(generateReqVO.getAccountSetId(), existingVouchers, userId);
+        Map<Long, Deque<Integer>> reusableNumbers = deleteExistingClosingVouchers(
+                generateReqVO.getAccountSetId(), existingVouchers, userId);
 
         // 3. 计算结转金额并校验非零
         Map<Long, FmsLedgerSubjectBalanceRespVO> balanceMap = ObjUtil.equal(closing.getTimeType(), FmsClosingTimeTypeEnum.YEAR_BEGIN.getType())
@@ -267,8 +273,16 @@ public class FmsClosingVoucherServiceImpl implements FmsClosingVoucherService {
 
         // 4. 按 JSON 科目规则构造凭证分录
         List<FmsVoucherEntrySaveReqVO> entries = isSpecialClosing(closing)
-                ? buildSpecialClosingEntries(closing, balance)
+                ? buildSpecialClosingEntries(closing, balance.abs())
                 : buildRegularClosingEntries(closing, balance);
+        // 年末结转本年利润：亏损（本年利润为借方余额）时借贷方向互换
+        if (ObjUtil.equal(closing.getType(), FmsClosingTypeEnum.YEAR_END_PROFIT.getType()) && balance.signum() < 0) {
+            for (FmsVoucherEntrySaveReqVO entry : entries) {
+                BigDecimal debitAmount = entry.getDebitAmount();
+                entry.setDebitAmount(entry.getCreditAmount());
+                entry.setCreditAmount(debitAmount);
+            }
+        }
 
         // 5. 创建凭证并登记方案关联
         LocalDateTime voucherTime = month.atEndOfMonth().atStartOfDay();
@@ -276,7 +290,7 @@ public class FmsClosingVoucherServiceImpl implements FmsClosingVoucherService {
                 .setAccountSetId(generateReqVO.getAccountSetId())
                 .setVoucherWordId(closing.getVoucherWordId())
                 .setVoucherTime(voucherTime)
-                .setVoucherNumber(voucherService.getNextVoucherNumber(generateReqVO.getAccountSetId(),
+                .setVoucherNumber(nextVoucherNumber(reusableNumbers, generateReqVO.getAccountSetId(),
                         closing.getVoucherWordId(), voucherTime, userId))
                 .setEntries(entries), userId);
         closingVoucherMapper.insert(new FmsClosingVoucherDO().setClosingId(closing.getId())
@@ -310,6 +324,9 @@ public class FmsClosingVoucherServiceImpl implements FmsClosingVoucherService {
             validatePeriodEndClosing(closing);
             closings.add(closing);
         }
+        // 结转本年利润依赖本期结转损益后的“本年利润”余额，放到最后生成
+        closings.sort(Comparator.comparingInt(item ->
+                ObjUtil.equal(item.getType(), FmsClosingTypeEnum.YEAR_END_PROFIT.getType()) ? 1 : 0));
 
         // 2. 统一删除本批方案的旧结转凭证，避免逐个重生成后删除旧凭证造成凭证号断号
         YearMonth month = LocalDateTimeUtils.parseYearMonth(generateReqVO.getMonth());
@@ -352,13 +369,47 @@ public class FmsClosingVoucherServiceImpl implements FmsClosingVoucherService {
      * @param closingVouchers 结账凭证关联列表
      * @param userId 用户编号
      */
-    private void deleteExistingClosingVouchers(Long accountSetId, List<FmsClosingVoucherDO> closingVouchers, Long userId) {
+    /**
+     * 删除重新生成前的旧结转凭证，并返回可复用的凭证号（按凭证字分组、从小到大），避免重新生成后出现断号
+     */
+    private Map<Long, Deque<Integer>> deleteExistingClosingVouchers(Long accountSetId,
+            List<FmsClosingVoucherDO> closingVouchers, Long userId) {
+        Map<Long, Deque<Integer>> reusableNumbers = new HashMap<>();
         if (CollUtil.isEmpty(closingVouchers)) {
-            return;
+            return reusableNumbers;
         }
         List<Long> voucherIds = convertList(closingVouchers, FmsClosingVoucherDO::getVoucherId);
+        Map<Long, List<Integer>> numbers = new HashMap<>();
+        for (Long voucherId : voucherIds) {
+            try {
+                FmsVoucherDO voucher = voucherService.getVoucher(accountSetId, voucherId, userId);
+                if (voucher != null && voucher.getVoucherNumber() != null) {
+                    numbers.computeIfAbsent(voucher.getVoucherWordId(), key -> new ArrayList<>())
+                            .add(voucher.getVoucherNumber());
+                }
+            } catch (RuntimeException ignored) {
+                // 旧凭证已被手工删除时不复用凭证号
+            }
+        }
         closingVoucherMapper.deleteByIds(convertList(closingVouchers, FmsClosingVoucherDO::getId));
         voucherService.deleteVoucherList(accountSetId, voucherIds, userId);
+        numbers.forEach((wordId, list) -> {
+            Collections.sort(list);
+            reusableNumbers.put(wordId, new ArrayDeque<>(list));
+        });
+        return reusableNumbers;
+    }
+
+    /**
+     * 获得结转凭证号：优先复用被重新生成替换掉的旧凭证号，没有时取下一个凭证号
+     */
+    private Integer nextVoucherNumber(Map<Long, Deque<Integer>> reusableNumbers, Long accountSetId,
+            Long voucherWordId, LocalDateTime voucherTime, Long userId) {
+        Deque<Integer> queue = reusableNumbers.get(voucherWordId);
+        if (queue != null && !queue.isEmpty()) {
+            return queue.pollFirst();
+        }
+        return voucherService.getNextVoucherNumber(accountSetId, voucherWordId, voucherTime, userId);
     }
 
     /**
@@ -378,6 +429,9 @@ public class FmsClosingVoucherServiceImpl implements FmsClosingVoucherService {
     private BigDecimal calculateSpecialClosingBalance(FmsClosingSchemeDO closing, Long accountSetId,
             YearMonth month, List<FmsSubjectDO> subjects,
             Map<Long, FmsLedgerSubjectBalanceRespVO> balanceMap, Long userId) {
+        if (ObjUtil.equal(closing.getType(), FmsClosingTypeEnum.YEAR_END_PROFIT.getType())) {
+            return calculateYearEndProfitBalance(closing, month, balanceMap);
+        }
         Map<String, FmsSubjectDO> subjectMap = convertMap(subjects, FmsSubjectDO::getCode,
                 Function.identity(), (first, second) -> first);
         if (ObjUtil.equal(closing.getType(), FmsClosingTypeEnum.UNPAID_VAT.getType())) {
@@ -698,10 +752,36 @@ public class FmsClosingVoucherServiceImpl implements FmsClosingVoucherService {
      * @param closing 结账方案
      * @return 是否专用结转方案
      */
+    /**
+     * 计算“结转本年利润（年末）”的结转金额
+     *
+     * 只在 12 月取数：取借方规则科目（默认“本年利润”）的期末余额，贷方余额（盈利）为正数，借方余额（亏损）为负数
+     *
+     * @param closing 结账方案
+     * @param month 会计期间
+     * @param balanceMap 科目编号到余额的 Map
+     * @return 结转金额，负数表示亏损
+     */
+    private BigDecimal calculateYearEndProfitBalance(FmsClosingSchemeDO closing, YearMonth month,
+            Map<Long, FmsLedgerSubjectBalanceRespVO> balanceMap) {
+        if (month.getMonthValue() != 12 || CollUtil.isEmpty(closing.getSubjectRules())) {
+            return BigDecimal.ZERO;
+        }
+        FmsClosingSchemeDO.SubjectRule sourceRule = CollUtil.findOne(closing.getSubjectRules(),
+                rule -> ObjUtil.equal(rule.getDirection(), FmsDebitCreditDirectionEnum.DEBIT.getType()));
+        FmsLedgerSubjectBalanceRespVO balance = sourceRule == null ? null : balanceMap.get(sourceRule.getSubjectId());
+        if (balance == null) {
+            return BigDecimal.ZERO;
+        }
+        return NumberUtils.zeroIfNull(balance.getEndingCreditAmount())
+                .subtract(NumberUtils.zeroIfNull(balance.getEndingDebitAmount()));
+    }
+
     private boolean isSpecialClosing(FmsClosingSchemeDO closing) {
         return ObjUtil.equal(closing.getType(), FmsClosingTypeEnum.UNPAID_VAT.getType())
                 || ObjUtil.equal(closing.getType(), FmsClosingTypeEnum.LOCAL_TAX.getType())
-                || ObjUtil.equal(closing.getType(), FmsClosingTypeEnum.INCOME_TAX.getType());
+                || ObjUtil.equal(closing.getType(), FmsClosingTypeEnum.INCOME_TAX.getType())
+                || ObjUtil.equal(closing.getType(), FmsClosingTypeEnum.YEAR_END_PROFIT.getType());
     }
 
     /**

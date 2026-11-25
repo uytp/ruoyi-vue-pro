@@ -20,7 +20,8 @@ public enum FmsClosingTypeEnum implements ArrayValuable<Integer> {
     PROFIT_LOSS(2, "结转损益", "结转本期损益"),
     UNPAID_VAT(3, "转出未交增值税", "转出未交增值税"),
     LOCAL_TAX(4, "计提地税", "计提地税"),
-    INCOME_TAX(5, "计提所得税", "计提所得税");
+    INCOME_TAX(5, "计提所得税", "计提所得税"),
+    YEAR_END_PROFIT(6, "结转本年利润", "结转本年利润");
 
     public static final Integer[] ARRAYS = Arrays.stream(values())
             .map(FmsClosingTypeEnum::getType).toArray(Integer[]::new);

@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.fms.service.closing;
 
+import cn.iocoder.yudao.module.fms.enums.common.FmsDebitCreditDirectionEnum;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjUtil;
 import cn.iocoder.yudao.framework.common.util.date.LocalDateTimeUtils;
@@ -158,6 +159,15 @@ public class FmsClosingPeriodServiceImpl implements FmsClosingPeriodService {
         FmsIncomeStatementCheckRespVO incomeCheck = incomeStatementService.checkIncomeStatement(reportReqVO, userId);
         FmsBalanceSheetCheckRespVO balanceCheck = balanceSheetService.checkBalanceSheet(reportReqVO, userId);
 
+        // 3.1 年末（12 月）检查“本年利润”是否已结转到未分配利润
+        FmsClosingSchemeDO yearEndClosing = month.getMonthValue() == 12
+                ? closingSchemeService.getClosingSchemeByAccountSetIdAndType(
+                        queryReqVO.getAccountSetId(), FmsClosingTypeEnum.YEAR_END_PROFIT.getType()) : null;
+        boolean yearEndProfitRequired = yearEndClosing != null;
+        BigDecimal yearEndProfitBalance = yearEndProfitRequired
+                ? calculateYearEndProfitBalance(yearEndClosing, queryReqVO.getAccountSetId(), month, userId)
+                : BigDecimal.ZERO;
+
         // 4. 组装结账概况
         FmsFinanceParameterDO financeParameter = financeParameterService.getFinanceParameter(
                 queryReqVO.getAccountSetId(), userId);
@@ -178,7 +188,8 @@ public class FmsClosingPeriodServiceImpl implements FmsClosingPeriodService {
                 && initialBalanceBalanced && voucherNumberContinuous && profitLossVoucherGenerated
                 && profitLossBalance.compareTo(BigDecimal.ZERO) == 0
                 && incomeStatementBalanced && incomeUnmappedCount == 0
-                && balanceSheetProfitLossTransferred && balanceSheetBalanced && balanceUnmappedCount == 0;
+                && balanceSheetProfitLossTransferred && balanceSheetBalanced && balanceUnmappedCount == 0
+                && (!yearEndProfitRequired || yearEndProfitBalance.signum() == 0);
         return new FmsClosingOverviewRespVO().setMonth(queryReqVO.getMonth())
                 .setClosed(closed)
                 .setVoucherReviewRequired(voucherReviewRequired)
@@ -195,6 +206,8 @@ public class FmsClosingPeriodServiceImpl implements FmsClosingPeriodService {
                 .setBalanceSheetProfitLossTransferred(balanceSheetProfitLossTransferred)
                 .setBalanceSheetBalanced(balanceSheetBalanced)
                 .setBalanceSheetUnmappedSubjectCount(balanceUnmappedCount)
+                .setYearEndProfitRequired(yearEndProfitRequired)
+                .setYearEndProfitBalance(yearEndProfitBalance)
                 .setCanClose(canClose);
     }
 
@@ -237,6 +250,10 @@ public class FmsClosingPeriodServiceImpl implements FmsClosingPeriodService {
         if (overview.getVoucherReviewRequired() && overview.getPendingVoucherCount() > 0) {
             throw exception(CLOSING_VOUCHER_PENDING_REVIEW);
         }
+        // 1.3 校验凭证已全部过账（结账生成凭证由系统生成，不需要人工过账）
+        if (overview.getVoucherReviewRequired() && getUnpostedVoucherCount(accountSetId, month) > 0) {
+            throw exception(CLOSING_VOUCHER_NOT_POSTED);
+        }
 
         // 2.1 校验初始余额试算平衡
         if (!Boolean.TRUE.equals(overview.getInitialBalanceBalanced())) {
@@ -253,6 +270,11 @@ public class FmsClosingPeriodServiceImpl implements FmsClosingPeriodService {
         }
         if (overview.getProfitLossBalance().compareTo(BigDecimal.ZERO) != 0) {
             throw exception(CLOSING_PROFIT_LOSS_NOT_TRANSFERRED);
+        }
+        // 3.1.1 年末校验本年利润已结转
+        if (Boolean.TRUE.equals(overview.getYearEndProfitRequired())
+                && overview.getYearEndProfitBalance().signum() != 0) {
+            throw exception(CLOSING_YEAR_END_PROFIT_NOT_TRANSFERRED);
         }
         // 3.2 校验利润表勾稽和公式覆盖
         if (!Boolean.TRUE.equals(overview.getIncomeStatementBalanced())) {
@@ -331,6 +353,51 @@ public class FmsClosingPeriodServiceImpl implements FmsClosingPeriodService {
         LocalDateTime beginTime = LocalDateTimeUtils.getMonthBeginTime(month);
         FmsClosingPeriodDO period = closingPeriodMapper.selectByPeriod(accountSetId, beginTime, LocalDateTimeUtils.endOfMonth(beginTime));
         return period != null;
+    }
+
+    /**
+     * 获得未过账凭证数量（不含结账生成凭证）
+     *
+     * @param accountSetId 账套编号
+     * @param month 会计期间
+     * @return 未过账凭证数量
+     */
+    /**
+     * 计算年末“本年利润”尚未结转的余额（贷方为正，借方为负）
+     *
+     * @param closing 结转本年利润方案
+     * @param accountSetId 账套编号
+     * @param month 会计期间
+     * @param userId 用户编号
+     * @return 本年利润期末余额
+     */
+    private BigDecimal calculateYearEndProfitBalance(FmsClosingSchemeDO closing, Long accountSetId,
+            YearMonth month, Long userId) {
+        FmsClosingSchemeDO.SubjectRule sourceRule = CollUtil.isEmpty(closing.getSubjectRules()) ? null
+                : CollUtil.findOne(closing.getSubjectRules(),
+                        rule -> ObjUtil.equal(rule.getDirection(), FmsDebitCreditDirectionEnum.DEBIT.getType()));
+        if (sourceRule == null) {
+            return BigDecimal.ZERO;
+        }
+        FmsLedgerSubjectBalanceRespVO balance = getSubjectBalanceMap(accountSetId, month, userId)
+                .get(sourceRule.getSubjectId());
+        if (balance == null) {
+            return BigDecimal.ZERO;
+        }
+        return NumberUtils.zeroIfNull(balance.getEndingCreditAmount())
+                .subtract(NumberUtils.zeroIfNull(balance.getEndingDebitAmount()));
+    }
+
+    private long getUnpostedVoucherCount(Long accountSetId, YearMonth month) {
+        LocalDateTime beginTime = LocalDateTimeUtils.getMonthBeginTime(month);
+        LocalDateTime endTime = LocalDateTimeUtils.endOfMonth(beginTime);
+        List<FmsVoucherDO> vouchers = voucherService.getVoucherListByPeriod(accountSetId, beginTime, endTime);
+        Set<Long> closingVoucherIds = convertSet(
+                closingVoucherService.getClosingVoucherListByPeriod(accountSetId, beginTime, endTime),
+                FmsClosingVoucherDO::getVoucherId);
+        return count(vouchers, voucher -> !Boolean.TRUE.equals(voucher.getPosted())
+                && ObjUtil.notEqual(voucher.getStatus(), FmsVoucherStatusEnum.VOIDED.getStatus())
+                && !closingVoucherIds.contains(voucher.getId()));
     }
 
     /**

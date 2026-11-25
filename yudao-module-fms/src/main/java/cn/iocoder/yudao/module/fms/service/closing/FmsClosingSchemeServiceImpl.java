@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.fms.service.closing;
 
+import cn.iocoder.yudao.framework.common.exception.ServiceException;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.io.IoUtil;
 import cn.hutool.core.util.ObjUtil;
@@ -200,6 +201,9 @@ public class FmsClosingSchemeServiceImpl implements FmsClosingSchemeService {
         // 1. 校验账套读权限
         FmsAccountSetDO accountSet = accountSetService.validateAccountSetReadPermission(
                 queryReqVO.getAccountSetId(), userId);
+
+        // 1.2 存量账套补建“结转本年利润（年末）”预置方案
+        ensureYearEndProfitScheme(accountSet, userId);
 
         // 2. 查询方案、余额和已生成凭证
         YearMonth month = LocalDateTimeUtils.parseYearMonth(queryReqVO.getMonth());
@@ -507,6 +511,9 @@ public class FmsClosingSchemeServiceImpl implements FmsClosingSchemeService {
     private BigDecimal calculateSpecialClosingBalance(FmsClosingSchemeDO closing, Long accountSetId,
             YearMonth month, List<FmsSubjectDO> subjects,
             Map<Long, FmsLedgerSubjectBalanceRespVO> balanceMap, Long userId) {
+        if (ObjUtil.equal(closing.getType(), FmsClosingTypeEnum.YEAR_END_PROFIT.getType())) {
+            return calculateYearEndProfitBalance(closing, month, balanceMap);
+        }
         Map<String, FmsSubjectDO> subjectMap = buildPresetSubjectMap(accountSetId, subjects);
         if (ObjUtil.equal(closing.getType(), FmsClosingTypeEnum.UNPAID_VAT.getType())) {
             return getPositiveCreditEndingBalance(subjectMap.get(FmsClosingPresetSubjectEnum.VAT_PAYABLE.getCode()), balanceMap);
@@ -666,8 +673,8 @@ public class FmsClosingSchemeServiceImpl implements FmsClosingSchemeService {
         BigDecimal creditRatio = sumBigDecimal(filterList(saveReqVO.getSubjects(),
                 item -> ObjUtil.equal(item.getDirection(), FmsDebitCreditDirectionEnum.CREDIT.getType())),
                 FmsSpecialClosingSettingsSaveReqVO.SubjectRule::getAmountRatio);
-        boolean unpaidVatRatioInvalid = ObjUtil.equal(
-                closingType, FmsClosingTypeEnum.UNPAID_VAT.getType())
+        boolean unpaidVatRatioInvalid = (ObjUtil.equal(closingType, FmsClosingTypeEnum.UNPAID_VAT.getType())
+                || ObjUtil.equal(closingType, FmsClosingTypeEnum.YEAR_END_PROFIT.getType()))
                 && debitRatio.compareTo(NumberUtils.ONE_HUNDRED) != 0;
         if (debitRatio.signum() <= 0 || debitRatio.compareTo(creditRatio) != 0
                 || debitRatio.compareTo(NumberUtils.ONE_HUNDRED) > 0 || unpaidVatRatioInvalid) {
@@ -802,10 +809,93 @@ public class FmsClosingSchemeServiceImpl implements FmsClosingSchemeService {
      * @param closing 结账方案
      * @return 是否专用结转方案
      */
+    /**
+     * 计算“结转本年利润（年末）”的结转金额
+     *
+     * 只在 12 月取数：取借方规则科目（默认“本年利润”）的期末余额，贷方余额（盈利）为正数，借方余额（亏损）为负数
+     *
+     * @param closing 结账方案
+     * @param month 会计期间
+     * @param balanceMap 科目编号到余额的 Map
+     * @return 结转金额，负数表示亏损
+     */
+    private BigDecimal calculateYearEndProfitBalance(FmsClosingSchemeDO closing, YearMonth month,
+            Map<Long, FmsLedgerSubjectBalanceRespVO> balanceMap) {
+        if (month.getMonthValue() != 12 || CollUtil.isEmpty(closing.getSubjectRules())) {
+            return BigDecimal.ZERO;
+        }
+        FmsClosingSchemeDO.SubjectRule sourceRule = CollUtil.findOne(closing.getSubjectRules(),
+                rule -> ObjUtil.equal(rule.getDirection(), FmsDebitCreditDirectionEnum.DEBIT.getType()));
+        FmsLedgerSubjectBalanceRespVO balance = sourceRule == null ? null : balanceMap.get(sourceRule.getSubjectId());
+        if (balance == null) {
+            return BigDecimal.ZERO;
+        }
+        return NumberUtils.zeroIfNull(balance.getEndingCreditAmount())
+                .subtract(NumberUtils.zeroIfNull(balance.getEndingDebitAmount()));
+    }
+
+    /**
+     * 存量账套补建“结转本年利润（年末）”预置方案；预置科目缺失时跳过，不影响方案列表
+     *
+     * @param accountSet 账套
+     * @param userId 用户编号
+     */
+    private void ensureYearEndProfitScheme(FmsAccountSetDO accountSet, Long userId) {
+        if (!Boolean.TRUE.equals(accountSet.getInitialized())) {
+            return;
+        }
+        // 页面并发请求可能重复补建：保留编号最小的一条，删除其余未生成过凭证的重复方案
+        List<FmsClosingSchemeDO> existing = closingSchemeMapper.selectListByAccountSetIdAndType(
+                accountSet.getId(), FmsClosingTypeEnum.YEAR_END_PROFIT.getType());
+        for (int index = 1; index < existing.size(); index++) {
+            Long duplicateId = existing.get(index).getId();
+            if (closingVoucherService.getClosingVoucherCountByClosingId(duplicateId) == 0) {
+                closingSchemeMapper.deleteById(duplicateId);
+            }
+        }
+        if (!existing.isEmpty()) {
+            return;
+        }
+        // 加账套行锁后再查一次，保证并发请求只补建一次
+        accountSetService.lockAccountSet(accountSet.getId());
+        if (closingSchemeMapper.selectByAccountSetIdAndType(accountSet.getId(),
+                FmsClosingTypeEnum.YEAR_END_PROFIT.getType()) != null) {
+            return;
+        }
+        try {
+            SchemePreset preset = CollUtil.findOne(loadSchemePresets(), item -> Objects.equals(
+                    item.getClosingType(), FmsClosingTypeEnum.YEAR_END_PROFIT.name()));
+            if (preset == null) {
+                return;
+            }
+            FmsClosingSchemeDO profitLoss = closingSchemeMapper.selectByAccountSetIdAndType(
+                    accountSet.getId(), FmsClosingTypeEnum.PROFIT_LOSS.getType());
+            Long voucherWordId = profitLoss == null ? null : profitLoss.getVoucherWordId();
+            if (voucherWordId == null) {
+                List<FmsVoucherWordDO> voucherWords = voucherWordService.getVoucherWordList(accountSet.getId());
+                FmsVoucherWordDO voucherWord = CollUtil.findOne(voucherWords,
+                        item -> Boolean.TRUE.equals(item.getDefaultStatus()));
+                if (voucherWord == null) {
+                    voucherWord = CollUtil.getFirst(voucherWords);
+                }
+                if (voucherWord == null) {
+                    return;
+                }
+                voucherWordId = voucherWord.getId();
+            }
+            List<FmsSubjectDO> subjects = subjectService.getSubjectList(accountSet.getId(), null, userId);
+            closingSchemeMapper.insert(buildPresetClosingScheme(accountSet.getId(), voucherWordId, preset,
+                    buildPresetSubjectMap(accountSet.getId(), subjects)));
+        } catch (ServiceException ignored) {
+            // 预置科目不存在等情况，不自动创建
+        }
+    }
+
     private boolean isSpecialClosing(FmsClosingSchemeDO closing) {
         return ObjUtil.equal(closing.getType(), FmsClosingTypeEnum.UNPAID_VAT.getType())
                 || ObjUtil.equal(closing.getType(), FmsClosingTypeEnum.LOCAL_TAX.getType())
-                || ObjUtil.equal(closing.getType(), FmsClosingTypeEnum.INCOME_TAX.getType());
+                || ObjUtil.equal(closing.getType(), FmsClosingTypeEnum.INCOME_TAX.getType())
+                || ObjUtil.equal(closing.getType(), FmsClosingTypeEnum.YEAR_END_PROFIT.getType());
     }
 
     /**

@@ -110,5 +110,30 @@
         "amountRatio": 25
       }
     ]
+  },
+  {
+    "code": "year-end-profit",
+    "name": "结转本年利润（年末）",
+    "closingType": "YEAR_END_PROFIT",
+    "digest": "结转本年利润",
+    "periodEnd": true,
+    "closingDay": 31,
+    "calculationSubjects": [
+      "CURRENT_YEAR_PROFIT"
+    ],
+    "entries": [
+      {
+        "subject": "CURRENT_YEAR_PROFIT",
+        "digest": "结转本年利润",
+        "direction": "DEBIT",
+        "amountRatio": 100
+      },
+      {
+        "subject": "PRIOR_YEAR_ADJUSTMENT_CLOSING",
+        "digest": "结转本年利润",
+        "direction": "CREDIT",
+        "amountRatio": 100
+      }
+    ]
   }
 ]

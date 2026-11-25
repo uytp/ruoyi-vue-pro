@@ -85,6 +85,26 @@ public class FmsVoucherDO extends BaseDO {
      */
     private Long reviewerUserId;
     /**
+     * 是否已过账
+     */
+    private Boolean posted;
+    /**
+     * 过账人后台用户编号
+     *
+     * 关联 {@link cn.iocoder.yudao.module.system.dal.dataobject.user.AdminUserDO#getId()}
+     */
+    private Long posterUserId;
+    /**
+     * 过账时间
+     */
+    private LocalDateTime postTime;
+    /**
+     * 冲销的原凭证编号（本凭证是红字冲销凭证时有值）
+     *
+     * 关联 {@link FmsVoucherDO#getId()}
+     */
+    private Long reversedVoucherId;
+    /**
      * 账套编号
      *
      * 关联 {@link cn.iocoder.yudao.module.fms.dal.dataobject.config.FmsAccountSetDO#getId()}

@@ -28,6 +28,22 @@ public interface FmsVoucherMapper extends BaseMapperX<FmsVoucherDO> {
                 .set(FmsVoucherDO::getReviewerUserId, reviewerUserId));
     }
 
+    default void updatePostStatusById(Long id, Boolean posted, Long posterUserId, LocalDateTime postTime) {
+        update(new LambdaUpdateWrapper<FmsVoucherDO>()
+                .eq(FmsVoucherDO::getId, id)
+                .set(FmsVoucherDO::getPosted, posted)
+                .set(FmsVoucherDO::getPosterUserId, posterUserId)
+                .set(FmsVoucherDO::getPostTime, postTime));
+    }
+
+    default List<FmsVoucherDO> selectListByReversedVoucherIds(Long accountSetId, Collection<Long> reversedVoucherIds) {
+        return selectList(new LambdaQueryWrapperX<FmsVoucherDO>()
+                .eq(FmsVoucherDO::getAccountSetId, accountSetId)
+                .in(FmsVoucherDO::getReversedVoucherId, reversedVoucherIds)
+                // 已作废的冲销凭证不算“已冲销”，原凭证可以重新冲销
+                .ne(FmsVoucherDO::getStatus, cn.iocoder.yudao.module.fms.enums.voucher.FmsVoucherStatusEnum.VOIDED.getStatus()));
+    }
+
     default PageResult<FmsVoucherDO> selectPage(FmsVoucherPageReqVO reqVO, Collection<Long> voucherIds) {
         LambdaQueryWrapperX<FmsVoucherDO> query = new LambdaQueryWrapperX<FmsVoucherDO>()
                 .eq(FmsVoucherDO::getAccountSetId, reqVO.getAccountSetId())
@@ -36,6 +52,7 @@ public interface FmsVoucherMapper extends BaseMapperX<FmsVoucherDO> {
                 .eqIfPresent(FmsVoucherDO::getVoucherWordId, reqVO.getVoucherWordId())
                 .eqIfPresent(FmsVoucherDO::getVoucherNumber, reqVO.getVoucherNumber())
                 .eqIfPresent(FmsVoucherDO::getStatus, reqVO.getStatus())
+                .eqIfPresent(FmsVoucherDO::getPosted, reqVO.getPosted())
                 .eqIfPresent(FmsVoucherDO::getCreator, reqVO.getCreatorUserId() == null ? null : reqVO.getCreatorUserId().toString())
                 .inIfPresent(FmsVoucherDO::getId, voucherIds);
         return selectPage(reqVO, query.orderByAsc(FmsVoucherDO::getVoucherTime)

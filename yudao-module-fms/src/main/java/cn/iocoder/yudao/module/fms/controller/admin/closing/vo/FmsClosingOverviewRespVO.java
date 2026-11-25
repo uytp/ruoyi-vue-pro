@@ -57,6 +57,12 @@ public class FmsClosingOverviewRespVO {
     @Schema(description = "资产负债表未纳入公式的科目数量", example = "0")
     private Integer balanceSheetUnmappedSubjectCount;
 
+    @Schema(description = "是否需要年末结转本年利润（12 月）")
+    private Boolean yearEndProfitRequired;
+
+    @Schema(description = "本年利润未结转余额，贷方为正，借方为负", example = "0.00")
+    private BigDecimal yearEndProfitBalance;
+
     @Schema(description = "是否满足全部结账条件")
     private Boolean canClose;
 

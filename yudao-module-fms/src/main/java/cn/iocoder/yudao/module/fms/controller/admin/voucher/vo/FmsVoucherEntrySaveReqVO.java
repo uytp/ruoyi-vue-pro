@@ -50,6 +50,17 @@ public class FmsVoucherEntrySaveReqVO {
     @Valid
     private List<AuxiliaryItem> auxiliaries;
 
+    @Schema(description = "外币币别编号", example = "2")
+    private Long currencyId;
+
+    @Schema(description = "汇率", example = "7.100000")
+    @Digits(integer = 12, fraction = 6, message = "汇率最多保留 6 位小数")
+    private BigDecimal exchangeRate;
+
+    @Schema(description = "原币金额", example = "1000.00")
+    @Digits(integer = 16, fraction = 2, message = "原币金额最多保留 2 位小数")
+    private BigDecimal originalAmount;
+
     @Schema(description = "管理后台 - FMS 凭证分录辅助核算项目")
     @Data
     public static class AuxiliaryItem {

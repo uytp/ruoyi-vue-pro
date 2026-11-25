@@ -1,5 +1,7 @@
 package cn.iocoder.yudao.module.fms.service.voucher;
 
+import java.time.LocalDate;
+import cn.iocoder.yudao.module.fms.dal.dataobject.config.FmsAccountSetDO;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.date.DatePattern;
 import cn.hutool.core.util.ObjUtil;
@@ -31,6 +33,9 @@ import cn.iocoder.yudao.module.fms.dal.dataobject.config.FmsVoucherWordDO;
 import cn.iocoder.yudao.module.fms.dal.dataobject.voucher.FmsVoucherDO;
 import cn.iocoder.yudao.module.fms.dal.dataobject.voucher.FmsVoucherEntryDO;
 import cn.iocoder.yudao.module.fms.dal.mysql.voucher.FmsVoucherEntryMapper;
+import cn.iocoder.yudao.module.fms.dal.dataobject.config.FmsCurrencyDO;
+import cn.iocoder.yudao.module.fms.dal.mysql.config.FmsCurrencyMapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import cn.iocoder.yudao.module.fms.dal.mysql.voucher.FmsVoucherMapper;
 import cn.iocoder.yudao.module.fms.enums.voucher.FmsVoucherStatusEnum;
 import cn.iocoder.yudao.module.fms.service.closing.FmsClosingPeriodService;
@@ -94,6 +99,8 @@ public class FmsVoucherServiceImpl implements FmsVoucherService {
     private FmsVoucherMapper voucherMapper;
     @Resource
     private FmsVoucherEntryMapper voucherEntryMapper;
+    @Resource
+    private FmsCurrencyMapper currencyMapper;
 
     @Resource
     private FmsAccountSetService accountSetService;
@@ -174,6 +181,9 @@ public class FmsVoucherServiceImpl implements FmsVoucherService {
         FmsVoucherDO voucher = validateVoucherExists(updateReqVO.getAccountSetId(), updateReqVO.getId());
         validateClosingVoucherEditable(updateReqVO.getAccountSetId(), singletonList(voucher.getId()));
         validateVoucherEditable(voucher);
+        if (ObjUtil.equal(voucher.getStatus(), FmsVoucherStatusEnum.VOIDED.getStatus())) {
+            throw exception(VOUCHER_VOIDED_NOT_EDITABLE);
+        }
         // 1.4 校验原会计期间和新会计期间
         closingPeriodService.validatePeriodOpen(updateReqVO.getAccountSetId(), voucher.getVoucherTime());
         closingPeriodService.validatePeriodOpen(updateReqVO.getAccountSetId(), updateReqVO.getVoucherTime());
@@ -271,12 +281,161 @@ public class FmsVoucherServiceImpl implements FmsVoucherService {
             if (!canApprove && !canCancel) {
                 throw exception(VOUCHER_STATUS_INVALID);
             }
+            if (canCancel && Boolean.TRUE.equals(voucher.getPosted())) {
+                throw exception(VOUCHER_POSTED_NOT_UNREVIEWABLE);
+            }
         }
 
         // 2. 更新审核状态和审核人
         Long reviewerUserId = ObjUtil.equal(status, FmsVoucherStatusEnum.APPROVED.getStatus()) ? userId : null;
         vouchers.forEach(voucher -> voucherMapper.updateReviewStatusById(
                 voucher.getId(), status, reviewerUserId));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateVoucherPostStatus(Long accountSetId, List<Long> ids, Boolean posted, Long userId) {
+        // 1.1 校验账套写权限
+        accountSetService.validateAccountSetWritePermission(accountSetId, userId);
+        // 1.2 校验凭证存在，且不是结账生成凭证
+        List<FmsVoucherDO> vouchers = validateVoucherList(accountSetId, ids);
+        validateClosingVoucherEditable(accountSetId, ids);
+        // 1.3 校验会计期间未结账
+        vouchers.forEach(voucher -> closingPeriodService.validatePeriodOpen(
+                accountSetId, voucher.getVoucherTime()));
+        // 1.4 校验过账状态流转：已审核且未过账 -> 过账；已过账 -> 反过账
+        boolean targetPosted = Boolean.TRUE.equals(posted);
+        for (FmsVoucherDO voucher : vouchers) {
+            boolean currentPosted = Boolean.TRUE.equals(voucher.getPosted());
+            if (targetPosted) {
+                if (ObjUtil.notEqual(voucher.getStatus(), FmsVoucherStatusEnum.APPROVED.getStatus())) {
+                    throw exception(VOUCHER_POST_NOT_APPROVED);
+                }
+                if (currentPosted) {
+                    throw exception(VOUCHER_POST_STATUS_INVALID);
+                }
+            } else if (!currentPosted) {
+                throw exception(VOUCHER_POST_STATUS_INVALID);
+            }
+        }
+
+        // 2. 更新过账状态、过账人和过账时间
+        Long posterUserId = targetPosted ? userId : null;
+        LocalDateTime postTime = targetPosted ? LocalDateTime.now() : null;
+        vouchers.forEach(voucher -> voucherMapper.updatePostStatusById(
+                voucher.getId(), targetPosted, posterUserId, postTime));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateVoucherVoidStatus(Long accountSetId, List<Long> ids, Boolean voided, Long userId) {
+        // 1.1 校验账套写权限
+        accountSetService.validateAccountSetWritePermission(accountSetId, userId);
+        // 1.2 校验凭证存在，且不是结账生成凭证
+        List<FmsVoucherDO> vouchers = validateVoucherList(accountSetId, ids);
+        validateClosingVoucherEditable(accountSetId, ids);
+        // 1.3 校验会计期间未结账
+        vouchers.forEach(voucher -> closingPeriodService.validatePeriodOpen(
+                accountSetId, voucher.getVoucherTime()));
+        // 1.4 校验状态流转：待审核 -> 已作废；已作废 -> 待审核
+        boolean targetVoided = Boolean.TRUE.equals(voided);
+        Integer fromStatus = targetVoided ? FmsVoucherStatusEnum.PENDING_REVIEW.getStatus()
+                : FmsVoucherStatusEnum.VOIDED.getStatus();
+        Integer toStatus = targetVoided ? FmsVoucherStatusEnum.VOIDED.getStatus()
+                : FmsVoucherStatusEnum.PENDING_REVIEW.getStatus();
+        for (FmsVoucherDO voucher : vouchers) {
+            if (ObjUtil.notEqual(voucher.getStatus(), fromStatus)) {
+                throw exception(VOUCHER_VOID_STATUS_INVALID);
+            }
+        }
+
+        // 2. 更新状态（作废凭证保留凭证号，账簿和报表不再计入）
+        vouchers.forEach(voucher -> voucherMapper.updateReviewStatusById(voucher.getId(), toStatus, null));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long reverseVoucher(Long accountSetId, Long id, Long userId) {
+        // 1.1 校验账套写权限，并串行化凭证编号写操作
+        FmsAccountSetDO accountSet = accountSetService.validateAccountSetWritePermission(accountSetId, userId);
+        accountSetService.lockAccountSet(accountSetId);
+        // 1.2 校验原凭证：已审核、非结账生成、本身不是冲销凭证、未被冲销过
+        FmsVoucherDO source = validateVoucherExists(accountSetId, id);
+        if (ObjUtil.notEqual(source.getStatus(), FmsVoucherStatusEnum.APPROVED.getStatus())) {
+            throw exception(VOUCHER_REVERSE_NOT_APPROVED);
+        }
+        validateClosingVoucherEditable(accountSetId, singletonList(id));
+        if (source.getReversedVoucherId() != null) {
+            throw exception(VOUCHER_REVERSE_SOURCE_INVALID);
+        }
+        if (CollUtil.isNotEmpty(voucherMapper.selectListByReversedVoucherIds(accountSetId, singletonList(id)))) {
+            throw exception(VOUCHER_ALREADY_REVERSED);
+        }
+
+        // 2. 冲销凭证记在当前会计期间：今天在当前期间内用今天，否则用当前期间最后一天
+        YearMonth currentMonth = closingPeriodService.getCurrentMonth(accountSetId, accountSet.getStartTime());
+        LocalDate today = LocalDate.now();
+        LocalDateTime voucherTime = YearMonth.from(today).equals(currentMonth)
+                ? today.atStartOfDay() : currentMonth.atEndOfMonth().atStartOfDay();
+
+        // 3. 按原分录生成红字分录：科目、辅助核算不变，金额和数量取负数
+        FmsVoucherWordDO voucherWord = voucherWordService.getVoucherWordMap(accountSetId).get(source.getVoucherWordId());
+        String prefix = "冲销" + (voucherWord == null ? "" : voucherWord.getName() + "-")
+                + source.getVoucherNumber() + "号：";
+        List<FmsVoucherEntrySaveReqVO> entries = new ArrayList<>();
+        for (FmsVoucherEntryDO entry : voucherEntryMapper.selectListByVoucherId(id)) {
+            String digest = prefix + (entry.getDigest() == null ? "" : entry.getDigest());
+            FmsVoucherEntrySaveReqVO entryReqVO = new FmsVoucherEntrySaveReqVO();
+            entryReqVO.setDigest(digest.length() > 500 ? digest.substring(0, 500) : digest);
+            entryReqVO.setSubjectId(entry.getSubjectId());
+            entryReqVO.setDebitAmount(entry.getDebitAmount() == null ? BigDecimal.ZERO : entry.getDebitAmount().negate());
+            entryReqVO.setCreditAmount(entry.getCreditAmount() == null ? BigDecimal.ZERO : entry.getCreditAmount().negate());
+            if (entry.getQuantity() != null && entry.getQuantity().signum() != 0) {
+                entryReqVO.setQuantity(entry.getQuantity().negate());
+                entryReqVO.setUnitPrice(entry.getUnitPrice());
+            }
+            List<FmsVoucherEntrySaveReqVO.AuxiliaryItem> auxiliaries = new ArrayList<>();
+            if (entry.getAuxiliaries() != null) {
+                for (FmsVoucherEntryDO.AuxiliaryItem item : entry.getAuxiliaries()) {
+                    FmsVoucherEntrySaveReqVO.AuxiliaryItem auxiliary = new FmsVoucherEntrySaveReqVO.AuxiliaryItem();
+                    auxiliary.setTypeId(item.getTypeId());
+                    auxiliary.setItemId(item.getItemId());
+                    auxiliaries.add(auxiliary);
+                }
+            }
+            entryReqVO.setAuxiliaries(auxiliaries);
+            if (entry.getCurrencyId() != null) {
+                entryReqVO.setCurrencyId(entry.getCurrencyId());
+                entryReqVO.setExchangeRate(entry.getExchangeRate());
+                entryReqVO.setOriginalAmount(entry.getOriginalAmount() == null
+                        ? BigDecimal.ZERO : entry.getOriginalAmount().negate());
+            }
+            entries.add(entryReqVO);
+        }
+
+        // 4. 创建冲销凭证，并记录对应的原凭证
+        FmsVoucherSaveReqVO createReqVO = new FmsVoucherSaveReqVO();
+        createReqVO.setAccountSetId(accountSetId);
+        createReqVO.setVoucherWordId(source.getVoucherWordId());
+        createReqVO.setVoucherTime(voucherTime);
+        createReqVO.setVoucherNumber(getNextVoucherNumber(accountSetId, source.getVoucherWordId(), voucherTime, userId));
+        createReqVO.setAttachmentCount(0);
+        createReqVO.setEntries(entries);
+        Long reverseVoucherId = createVoucher(createReqVO, userId);
+        FmsVoucherDO updateObj = new FmsVoucherDO();
+        updateObj.setId(reverseVoucherId);
+        updateObj.setReversedVoucherId(id);
+        voucherMapper.updateById(updateObj);
+        return reverseVoucherId;
+    }
+
+    @Override
+    public Set<Long> getReversedVoucherIdSet(Long accountSetId, Collection<Long> voucherIds) {
+        if (CollUtil.isEmpty(voucherIds)) {
+            return Collections.emptySet();
+        }
+        return convertSet(voucherMapper.selectListByReversedVoucherIds(accountSetId, voucherIds),
+                FmsVoucherDO::getReversedVoucherId);
     }
 
     @Override
@@ -908,6 +1067,8 @@ public class FmsVoucherServiceImpl implements FmsVoucherService {
         List<FmsAuxiliaryItemDO> auxiliaryItemList = auxiliaryItemService.validateAuxiliaryItemList(
                 reqVO.getAccountSetId(), auxiliaryItemIds);
         Map<Long, FmsAuxiliaryItemDO> auxiliaryItemMap = convertMap(auxiliaryItemList, FmsAuxiliaryItemDO::getId);
+        Map<Long, FmsCurrencyDO> currencyMap = convertMap(
+                currencyMapper.selectListByAccountSetId(reqVO.getAccountSetId()), FmsCurrencyDO::getId);
 
         // 2. 校验并构造每条分录
         List<FmsVoucherEntryDO> entries = new ArrayList<>();
@@ -921,18 +1082,19 @@ public class FmsVoucherServiceImpl implements FmsVoucherService {
                     || (debit.signum() == 0 && credit.signum() == 0)) {
                 throw exception(VOUCHER_ENTRY_AMOUNT_INVALID);
             }
-            validateQuantity(entryReqVO, subject, debit.abs().max(credit.abs()));
+            validateQuantity(entryReqVO, subject, debit.signum() != 0 ? debit : credit);
             List<FmsVoucherEntryDO.AuxiliaryItem> auxiliaries = buildAuxiliaries(
                     entryReqVO, subject, auxiliaryTypeMap, auxiliaryItemMap);
             // 数量和单价仅在科目启用数量核算且实际填写时必填，未启用时保持零值
-            entries.add(new FmsVoucherEntryDO().setAccountSetId(reqVO.getAccountSetId())
+            entries.add(applyEntryCurrency(new FmsVoucherEntryDO().setAccountSetId(reqVO.getAccountSetId())
                     .setId(entryReqVO.getId())
                     .setDigest(entryReqVO.getDigest()).setSubjectId(subject.getId())
                     .setSubjectCode(subject.getCode()).setSubjectName(subject.getName())
                     .setQuantity(ObjUtil.defaultIfNull(entryReqVO.getQuantity(), BigDecimal.ZERO))
                     .setUnitPrice(ObjUtil.defaultIfNull(entryReqVO.getUnitPrice(), BigDecimal.ZERO))
                     .setDebitAmount(debit).setCreditAmount(credit).setSort(index + 1)
-                    .setAuxiliaries(auxiliaries));
+                    .setAuxiliaries(auxiliaries), entryReqVO, subject,
+                    debit.signum() != 0 ? debit : credit, currencyMap));
         }
 
         // 3. 校验凭证借贷平衡并补充辅助核算组合编号
@@ -965,10 +1127,61 @@ public class FmsVoucherServiceImpl implements FmsVoucherService {
         if (CollUtil.isNotEmpty(diffEntries.get(1))) {
             diffEntries.get(1).forEach(entry -> entry.setVoucherId(voucherId));
             voucherEntryMapper.updateBatch(diffEntries.get(1));
+            // updateById 会忽略 null 字段：改成本位币分录时，显式清空原来的外币币别
+            List<Long> localEntryIds = convertList(filterList(diffEntries.get(1),
+                    entry -> entry.getCurrencyId() == null), FmsVoucherEntryDO::getId);
+            if (CollUtil.isNotEmpty(localEntryIds)) {
+                voucherEntryMapper.update(null, new LambdaUpdateWrapper<FmsVoucherEntryDO>()
+                        .set(FmsVoucherEntryDO::getCurrencyId, null)
+                        .in(FmsVoucherEntryDO::getId, localEntryIds));
+            }
         }
         if (CollUtil.isNotEmpty(diffEntries.get(2))) {
             voucherEntryMapper.deleteByIds(convertList(diffEntries.get(2), FmsVoucherEntryDO::getId));
         }
+    }
+
+    /**
+     * 校验并填充分录的外币信息
+     *
+     * 1. 科目未启用外币核算：不能选择币别，汇率、原币按 0 保存
+     * 2. 科目启用外币核算：必须选择科目允许的币别、汇率大于 0；
+     *    原币不为 0 时，本位币金额 = 原币 × 汇率（允许 0.01 尾差），原币与本位币正负号一致；
+     *    原币为 0 的分录视为期末调汇 / 尾差调整分录
+     */
+    private FmsVoucherEntryDO applyEntryCurrency(FmsVoucherEntryDO entry, FmsVoucherEntrySaveReqVO entryReqVO,
+            FmsSubjectDO subject, BigDecimal amount, Map<Long, FmsCurrencyDO> currencyMap) {
+        List<Long> subjectCurrencyIds = subject.getCurrencyIds();
+        if (CollUtil.isEmpty(subjectCurrencyIds)) {
+            if (entryReqVO.getCurrencyId() != null) {
+                FmsCurrencyDO currency = currencyMap.get(entryReqVO.getCurrencyId());
+                if (currency == null || !Boolean.TRUE.equals(currency.getStandard())) {
+                    throw exception(VOUCHER_CURRENCY_NOT_ALLOWED, subject.getName());
+                }
+            }
+            return entry.setCurrencyId(null).setExchangeRate(BigDecimal.ZERO).setOriginalAmount(BigDecimal.ZERO);
+        }
+        Long currencyId = entryReqVO.getCurrencyId();
+        if (currencyId == null) {
+            throw exception(VOUCHER_CURRENCY_REQUIRED, subject.getName());
+        }
+        if (!subjectCurrencyIds.contains(currencyId) || !currencyMap.containsKey(currencyId)) {
+            throw exception(VOUCHER_CURRENCY_NOT_ALLOWED, subject.getName());
+        }
+        BigDecimal rate = entryReqVO.getExchangeRate();
+        if (rate == null || rate.signum() <= 0) {
+            throw exception(VOUCHER_EXCHANGE_RATE_INVALID, subject.getName());
+        }
+        BigDecimal original = normalizeAmount(ObjUtil.defaultIfNull(entryReqVO.getOriginalAmount(), BigDecimal.ZERO));
+        if (original.signum() != 0) {
+            BigDecimal expected = original.multiply(rate).setScale(2, RoundingMode.HALF_UP);
+            if (original.signum() != amount.signum()
+                    || expected.subtract(amount).abs().compareTo(new BigDecimal("0.01")) > 0) {
+                throw exception(VOUCHER_ORIGINAL_AMOUNT_MISMATCH, subject.getName());
+            }
+        }
+        return entry.setCurrencyId(currencyId).setExchangeRate(rate.setScale(6, RoundingMode.HALF_UP))
+                .setOriginalAmount(original);
     }
 
     private void validateVoucherSubject(FmsSubjectDO subject, Set<Long> parentIds) {
@@ -996,7 +1209,7 @@ public class FmsVoucherServiceImpl implements FmsVoucherService {
         BigDecimal unitPrice = entryReqVO.getUnitPrice();
         // 未启用数量核算的科目不能填写数量和单价
         if (Boolean.FALSE.equals(subject.getQuantityAccounting())) {
-            if (quantity != null && quantity.signum() > 0 || unitPrice != null && unitPrice.signum() > 0) {
+            if (quantity != null && quantity.signum() != 0 || unitPrice != null && unitPrice.signum() > 0) {
                 throw exception(VOUCHER_QUANTITY_INVALID);
             }
             return;
@@ -1006,9 +1219,11 @@ public class FmsVoucherServiceImpl implements FmsVoucherService {
                 && (unitPrice == null || unitPrice.signum() == 0)) {
             return;
         }
-        // 数量和单价需同时大于零，且乘积必须等于分录金额
-        if (quantity == null || quantity.signum() <= 0 || unitPrice == null || unitPrice.signum() <= 0
-                || quantity.multiply(unitPrice).setScale(2, RoundingMode.FLOOR).compareTo(amount) != 0) {
+        // 数量和单价需同时填写且单价大于零；红字（负数金额）分录的数量为负数，其余为正数；数量×单价必须等于分录金额
+        boolean red = amount.signum() < 0;
+        if (quantity == null || unitPrice == null || unitPrice.signum() <= 0
+                || (red ? quantity.signum() >= 0 : quantity.signum() <= 0)
+                || quantity.abs().multiply(unitPrice).setScale(2, RoundingMode.FLOOR).compareTo(amount.abs()) != 0) {
             throw exception(VOUCHER_QUANTITY_INVALID);
         }
     }

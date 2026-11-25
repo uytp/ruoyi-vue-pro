@@ -127,7 +127,8 @@ public class FmsSubjectController {
                 .setCode(subject.getCode()).setName(subject.getName()).setType(subject.getType())
                 .setBalanceDirection(subject.getBalanceDirection()).setStatus(subject.getStatus())
                 .setLevel(subject.getLevel()).setAuxiliaryTypeIds(subject.getAuxiliaryTypeIds())
-                .setQuantityAccounting(subject.getQuantityAccounting()).setQuantityUnit(subject.getQuantityUnit())));
+                .setQuantityAccounting(subject.getQuantityAccounting()).setQuantityUnit(subject.getQuantityUnit())
+                .setCurrencyIds(subject.getCurrencyIds())));
     }
 
     @GetMapping("/export-excel")

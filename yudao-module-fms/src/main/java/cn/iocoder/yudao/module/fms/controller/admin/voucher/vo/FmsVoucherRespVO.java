@@ -62,6 +62,24 @@ public class FmsVoucherRespVO {
     @Schema(description = "审核人名称")
     private String reviewerUserName;
 
+    @Schema(description = "是否已过账", requiredMode = Schema.RequiredMode.REQUIRED)
+    private Boolean posted;
+
+    @Schema(description = "过账人后台用户编号")
+    private Long posterUserId;
+
+    @Schema(description = "过账人名称")
+    private String posterUserName;
+
+    @Schema(description = "过账时间")
+    private LocalDateTime postTime;
+
+    @Schema(description = "冲销的原凭证编号（本凭证是红字冲销凭证时有值）")
+    private Long reversedVoucherId;
+
+    @Schema(description = "是否已被红字冲销")
+    private Boolean reversed;
+
     @Schema(description = "创建时间", requiredMode = Schema.RequiredMode.REQUIRED)
     private LocalDateTime createTime;
 
@@ -107,6 +125,15 @@ public class FmsVoucherRespVO {
 
         @Schema(description = "辅助核算项目数组")
         private List<AuxiliaryItem> auxiliaries;
+
+        @Schema(description = "外币币别编号")
+        private Long currencyId;
+
+        @Schema(description = "汇率")
+        private BigDecimal exchangeRate;
+
+        @Schema(description = "原币金额")
+        private BigDecimal originalAmount;
 
         @Schema(description = "管理后台 - FMS 凭证分录辅助核算项目")
         @Data

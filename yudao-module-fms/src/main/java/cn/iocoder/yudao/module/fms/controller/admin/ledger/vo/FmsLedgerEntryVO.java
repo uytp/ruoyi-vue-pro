@@ -71,5 +71,17 @@ public class FmsLedgerEntryVO {
      * 辅助核算项目数组
      */
     private List<FmsVoucherEntryDO.AuxiliaryItem> auxiliaries;
+    /**
+     * 外币币别编号
+     */
+    private Long currencyId;
+    /**
+     * 汇率
+     */
+    private BigDecimal exchangeRate;
+    /**
+     * 原币金额
+     */
+    private BigDecimal originalAmount;
 
 }

@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.fms.service.voucher;
 
+import java.util.Set;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.fms.controller.admin.voucher.vo.FmsVoucherAttachmentUpdateReqVO;
 import cn.iocoder.yudao.module.fms.controller.admin.voucher.vo.FmsVoucherImportExcelVO;
@@ -74,6 +75,16 @@ public interface FmsVoucherService {
      * @param userId 用户编号
      */
     void updateVoucherReviewStatus(Long accountSetId, List<Long> ids, Integer status, Long userId);
+
+    /**
+     * 更新凭证过账状态（过账或反过账）
+     *
+     * @param accountSetId 账套编号
+     * @param ids 凭证编号数组
+     * @param posted 是否过账
+     * @param userId 用户编号
+     */
+    void updateVoucherPostStatus(Long accountSetId, List<Long> ids, Boolean posted, Long userId);
 
     /**
      * 整理凭证号
@@ -249,5 +260,34 @@ public interface FmsVoucherService {
      */
     List<FmsVoucherStatisticsRespVO> getVoucherStatisticsList(
             FmsVoucherStatisticsReqVO queryReqVO, Long userId);
+
+    /**
+     * 作废或恢复凭证：待审核 -> 已作废；已作废 -> 待审核。作废凭证保留凭证号，但不计入账簿和报表
+     *
+     * @param accountSetId 账套编号
+     * @param ids 凭证编号数组
+     * @param voided true 作废，false 恢复
+     * @param userId 用户编号
+     */
+    void updateVoucherVoidStatus(Long accountSetId, List<Long> ids, Boolean voided, Long userId);
+
+    /**
+     * 红字冲销凭证：在当前会计期间生成一张金额为负数的同科目凭证
+     *
+     * @param accountSetId 账套编号
+     * @param id 原凭证编号
+     * @param userId 用户编号
+     * @return 冲销凭证编号
+     */
+    Long reverseVoucher(Long accountSetId, Long id, Long userId);
+
+    /**
+     * 获得已被红字冲销的原凭证编号集合
+     *
+     * @param accountSetId 账套编号
+     * @param voucherIds 凭证编号集合
+     * @return 已被冲销的凭证编号集合
+     */
+    Set<Long> getReversedVoucherIdSet(Long accountSetId, Collection<Long> voucherIds);
 
 }

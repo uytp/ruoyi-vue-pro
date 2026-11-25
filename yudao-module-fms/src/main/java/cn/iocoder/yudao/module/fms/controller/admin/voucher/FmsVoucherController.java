@@ -1,5 +1,7 @@
 package cn.iocoder.yudao.module.fms.controller.admin.voucher;
 
+import cn.iocoder.yudao.module.fms.controller.admin.voucher.vo.FmsVoucherReverseReqVO;
+import cn.iocoder.yudao.module.fms.controller.admin.voucher.vo.FmsVoucherVoidReqVO;
 import cn.hutool.core.collection.CollUtil;
 import cn.iocoder.yudao.framework.apilog.core.annotation.ApiAccessLog;
 import cn.iocoder.yudao.framework.apilog.core.enums.OperateTypeEnum;
@@ -17,6 +19,7 @@ import cn.iocoder.yudao.module.fms.controller.admin.voucher.vo.FmsVoucherImportR
 import cn.iocoder.yudao.module.fms.controller.admin.voucher.vo.FmsVoucherImportTemplateVO;
 import cn.iocoder.yudao.module.fms.controller.admin.voucher.vo.FmsVoucherMoveReqVO;
 import cn.iocoder.yudao.module.fms.controller.admin.voucher.vo.FmsVoucherPageReqVO;
+import cn.iocoder.yudao.module.fms.controller.admin.voucher.vo.FmsVoucherPostReqVO;
 import cn.iocoder.yudao.module.fms.controller.admin.voucher.vo.FmsVoucherRespVO;
 import cn.iocoder.yudao.module.fms.controller.admin.voucher.vo.FmsVoucherReviewReqVO;
 import cn.iocoder.yudao.module.fms.controller.admin.voucher.vo.FmsVoucherSaveReqVO;
@@ -141,6 +144,32 @@ public class FmsVoucherController {
         voucherService.updateVoucherReviewStatus(reviewReqVO.getAccountSetId(),
                 reviewReqVO.getIds(), reviewReqVO.getStatus(), getLoginUserId());
         return success(true);
+    }
+
+    @PutMapping("/update-post-status")
+    @Operation(summary = "过账或反过账凭证")
+    @PreAuthorize("@ss.hasPermission('fms:voucher:post')")
+    public CommonResult<Boolean> updateVoucherPostStatus(@Valid @RequestBody FmsVoucherPostReqVO postReqVO) {
+        voucherService.updateVoucherPostStatus(postReqVO.getAccountSetId(),
+                postReqVO.getIds(), postReqVO.getPosted(), getLoginUserId());
+        return success(true);
+    }
+
+    @PutMapping("/update-void-status")
+    @Operation(summary = "作废或恢复凭证")
+    @PreAuthorize("@ss.hasPermission('fms:voucher:void')")
+    public CommonResult<Boolean> updateVoucherVoidStatus(@Valid @RequestBody FmsVoucherVoidReqVO voidReqVO) {
+        voucherService.updateVoucherVoidStatus(voidReqVO.getAccountSetId(),
+                voidReqVO.getIds(), voidReqVO.getVoided(), getLoginUserId());
+        return success(true);
+    }
+
+    @PostMapping("/reverse")
+    @Operation(summary = "红字冲销凭证")
+    @PreAuthorize("@ss.hasPermission('fms:voucher:reverse')")
+    public CommonResult<Long> reverseVoucher(@Valid @RequestBody FmsVoucherReverseReqVO reverseReqVO) {
+        return success(voucherService.reverseVoucher(reverseReqVO.getAccountSetId(),
+                reverseReqVO.getId(), getLoginUserId()));
     }
 
     @PutMapping("/tidy")
@@ -337,8 +366,9 @@ public class FmsVoucherController {
         Map<Long, List<FmsVoucherEntryDO>> entryMap = voucherService.getVoucherEntryMap(voucherIds);
         Map<Long, AdminUserRespDTO> userMap = adminUserApi.getUserMap(convertListByFlatMap(
                 vouchers, voucher -> Stream.of(NumberUtils.parseLong(voucher.getCreator()),
-                        voucher.getReviewerUserId())));
+                        voucher.getReviewerUserId(), voucher.getPosterUserId())));
         Set<Long> closingVoucherIds = closingVoucherService.getClosingVoucherIdSet(accountSetId, voucherIds);
+        Set<Long> reversedVoucherIds = voucherService.getReversedVoucherIdSet(accountSetId, voucherIds);
 
         // 2. 拼接凭证响应
         return convertList(vouchers, voucher -> {
@@ -348,12 +378,15 @@ public class FmsVoucherController {
                     FmsVoucherRespVO.Entry.class));
             respVO.setCreatorUserId(NumberUtils.parseLong(voucher.getCreator()));
             respVO.setClosingGenerated(closingVoucherIds.contains(voucher.getId()));
+            respVO.setReversed(reversedVoucherIds.contains(voucher.getId()));
             MapUtils.findAndThen(voucherWordMap, voucher.getVoucherWordId(),
                     word -> respVO.setVoucherWordName(word.getName()));
             MapUtils.findAndThen(userMap, respVO.getCreatorUserId(),
                     user -> respVO.setCreatorUserName(user.getNickname()));
             MapUtils.findAndThen(userMap, respVO.getReviewerUserId(),
                     user -> respVO.setReviewerUserName(user.getNickname()));
+            MapUtils.findAndThen(userMap, respVO.getPosterUserId(),
+                    user -> respVO.setPosterUserName(user.getNickname()));
             return respVO;
         });
     }

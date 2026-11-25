@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.fms.dal.mysql.voucher;
 
+import cn.iocoder.yudao.module.fms.enums.voucher.FmsVoucherStatusEnum;
 import cn.iocoder.yudao.framework.mybatis.core.mapper.BaseMapperX;
 import cn.iocoder.yudao.framework.mybatis.core.query.LambdaQueryWrapperX;
 import cn.iocoder.yudao.framework.mybatis.core.query.MPJLambdaWrapperX;
@@ -104,6 +105,7 @@ public interface FmsVoucherEntryMapper extends BaseMapperX<FmsVoucherEntryDO> {
                         .leIfPresent(FmsVoucherDO::getVoucherNumber, maxVoucherNumber)
                         .ge(FmsVoucherDO::getVoucherTime, beginTime)
                         .lt(FmsVoucherDO::getVoucherTime, endTime)
+                        .ne(FmsVoucherDO::getStatus, FmsVoucherStatusEnum.VOIDED.getStatus())
                         .innerJoin(FmsVoucherDO.class, FmsVoucherDO::getId,
                                 FmsVoucherEntryDO::getVoucherId)
                         .groupBy(FmsVoucherEntryDO::getSubjectId)

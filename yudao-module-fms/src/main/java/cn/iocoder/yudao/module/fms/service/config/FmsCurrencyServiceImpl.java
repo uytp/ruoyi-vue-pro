@@ -18,12 +18,19 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
+import cn.iocoder.yudao.module.fms.dal.dataobject.config.FmsCurrencyRateDO;
+import cn.iocoder.yudao.module.fms.dal.dataobject.config.FmsInitialCurrencyBalanceDO;
+import cn.iocoder.yudao.module.fms.dal.dataobject.voucher.FmsVoucherEntryDO;
+import cn.iocoder.yudao.module.fms.dal.mysql.config.FmsCurrencyRateMapper;
+import cn.iocoder.yudao.module.fms.dal.mysql.config.FmsInitialCurrencyBalanceMapper;
+import cn.iocoder.yudao.module.fms.dal.mysql.voucher.FmsVoucherEntryMapper;
 import java.util.Collections;
 import java.util.List;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.fms.enums.ErrorCodeConstants.CURRENCY_CODE_DUPLICATE;
 import static cn.iocoder.yudao.module.fms.enums.ErrorCodeConstants.CURRENCY_IN_USE;
+import static cn.iocoder.yudao.module.fms.enums.ErrorCodeConstants.CURRENCY_IN_VOUCHER_USE;
 import static cn.iocoder.yudao.module.fms.enums.ErrorCodeConstants.CURRENCY_NOT_EXISTS;
 import static cn.iocoder.yudao.module.fms.enums.ErrorCodeConstants.CURRENCY_STANDARD_NOT_DELETABLE;
 import static cn.iocoder.yudao.module.fms.enums.LogRecordConstants.FMS_CURRENCY_CREATE_SUB_TYPE;
@@ -45,6 +52,12 @@ public class FmsCurrencyServiceImpl implements FmsCurrencyService {
 
     @Resource
     private FmsCurrencyMapper currencyMapper;
+    @Resource
+    private FmsCurrencyRateMapper currencyRateMapper;
+    @Resource
+    private FmsInitialCurrencyBalanceMapper initialCurrencyBalanceMapper;
+    @Resource
+    private FmsVoucherEntryMapper voucherEntryMapper;
 
     @Resource
     private FmsAccountSetService accountSetService;
@@ -120,8 +133,15 @@ public class FmsCurrencyServiceImpl implements FmsCurrencyService {
             throw exception(CURRENCY_IN_USE);
         }
 
-        // 2. 删除币别
+        // 1.4 校验币别未被凭证分录、外币期初使用
+        if (voucherEntryMapper.selectCount(FmsVoucherEntryDO::getCurrencyId, id) > 0
+                || initialCurrencyBalanceMapper.selectCount(FmsInitialCurrencyBalanceDO::getCurrencyId, id) > 0) {
+            throw exception(CURRENCY_IN_VOUCHER_USE);
+        }
+
+        // 2. 删除币别及其汇率表
         currencyMapper.deleteById(id);
+        currencyRateMapper.delete(FmsCurrencyRateDO::getCurrencyId, id);
 
         // 3. 记录操作日志上下文
         LogRecordContext.putVariable("currency", currency);

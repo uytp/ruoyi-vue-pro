@@ -113,6 +113,14 @@ public interface ErrorCodeConstants {
     ErrorCode VOUCHER_IMPORT_FILE_TOO_LARGE = new ErrorCode(1_052_103_026, "导入文件不能超过 2MB");
     ErrorCode VOUCHER_IMPORT_TEMPLATE_INVALID = new ErrorCode(1_052_103_027, "凭证导入模板格式不正确");
     ErrorCode VOUCHER_CLOSING_GENERATED_NOT_EDITABLE = new ErrorCode(1_052_103_029, "结账生成凭证不能编辑、审核或删除");
+    ErrorCode VOUCHER_POST_NOT_APPROVED = new ErrorCode(1_052_103_031, "只有已审核的凭证才能过账");
+    ErrorCode VOUCHER_POST_STATUS_INVALID = new ErrorCode(1_052_103_032, "凭证过账状态流转不正确");
+    ErrorCode VOUCHER_POSTED_NOT_UNREVIEWABLE = new ErrorCode(1_052_103_033, "已过账凭证不能反审核，请先反过账");
+    ErrorCode VOUCHER_VOID_STATUS_INVALID = new ErrorCode(1_052_103_034, "只有待审核的凭证才能作废，只有已作废的凭证才能恢复");
+    ErrorCode VOUCHER_VOIDED_NOT_EDITABLE = new ErrorCode(1_052_103_035, "已作废凭证不能修改，请先恢复");
+    ErrorCode VOUCHER_REVERSE_NOT_APPROVED = new ErrorCode(1_052_103_036, "只有已审核的凭证才能红字冲销");
+    ErrorCode VOUCHER_REVERSE_SOURCE_INVALID = new ErrorCode(1_052_103_037, "红字冲销生成的凭证不能再冲销");
+    ErrorCode VOUCHER_ALREADY_REVERSED = new ErrorCode(1_052_103_038, "该凭证已经冲销过，不能重复冲销");
     ErrorCode VOUCHER_WORD_IN_USE_BY_CLOSING_SCHEME_NOT_DELETABLE = new ErrorCode(1_052_103_030,
             "该凭证字已被 {} 个结账方案使用，不能删除");
 
@@ -167,6 +175,9 @@ public interface ErrorCodeConstants {
             "结账方案【{}】所需科目【{}】不存在");
     ErrorCode CLOSING_SCHEME_NOT_PERIOD_END = new ErrorCode(1_052_105_027,
             "该结账方案未启用期末结转");
+    ErrorCode CLOSING_VOUCHER_NOT_POSTED = new ErrorCode(1_052_105_028, "存在未过账凭证，不能结账");
+    ErrorCode CLOSING_YEAR_END_PROFIT_NOT_TRANSFERRED = new ErrorCode(1_052_105_029,
+            "12 月结账前，请先在【期末结转方案】里生成“结转本年利润（年末）”凭证，把本年利润转入未分配利润");
 
     // ========== 报表 1-052-106-000 ==========
     ErrorCode REPORT_CONFIG_NOT_EXISTS = new ErrorCode(1_052_106_000, "报表项目不存在");
@@ -182,6 +193,21 @@ public interface ErrorCodeConstants {
     ErrorCode CURRENCY_CODE_DUPLICATE = new ErrorCode(1_052_107_001, "币别编码已存在");
     ErrorCode CURRENCY_STANDARD_NOT_DELETABLE = new ErrorCode(1_052_107_002, "本位币不允许删除");
     ErrorCode CURRENCY_IN_USE = new ErrorCode(1_052_107_003, "币别已被科目使用，不能删除");
+    ErrorCode CURRENCY_STANDARD_RATE_NOT_EDITABLE = new ErrorCode(1_052_107_004, "本位币汇率固定为 1，不需要设置汇率");
+    ErrorCode CURRENCY_RATE_NOT_EXISTS = new ErrorCode(1_052_107_005, "汇率记录不存在");
+    ErrorCode CURRENCY_IN_VOUCHER_USE = new ErrorCode(1_052_107_006, "币别已在凭证或外币期初中使用，不能删除");
+    ErrorCode INITIAL_CURRENCY_BALANCE_SUBJECT_INVALID = new ErrorCode(1_052_107_007,
+            "科目【{}】不是末级科目或未启用该币别的外币核算");
+    ErrorCode EXCHANGE_ADJUST_NOTHING = new ErrorCode(1_052_107_008, "当前期间没有需要调汇的外币余额（汇兑差额都为 0）");
+    ErrorCode EXCHANGE_ADJUST_SUBJECT_INVALID = new ErrorCode(1_052_107_009,
+            "汇兑损益科目不存在、已停用或不是末级科目，请重新选择");
+    ErrorCode EXCHANGE_ADJUST_RATE_INVALID = new ErrorCode(1_052_107_010, "请填写币别【{}】大于 0 的期末汇率");
+    ErrorCode VOUCHER_CURRENCY_REQUIRED = new ErrorCode(1_052_107_011,
+            "科目【{}】启用了外币核算，请选择币别并填写汇率和原币金额");
+    ErrorCode VOUCHER_CURRENCY_NOT_ALLOWED = new ErrorCode(1_052_107_012, "科目【{}】未启用该币别的外币核算");
+    ErrorCode VOUCHER_EXCHANGE_RATE_INVALID = new ErrorCode(1_052_107_013, "科目【{}】的汇率必须大于 0");
+    ErrorCode VOUCHER_ORIGINAL_AMOUNT_MISMATCH = new ErrorCode(1_052_107_014,
+            "科目【{}】的本位币金额应等于 原币 × 汇率（允许 0.01 尾差）");
 
     // ========== 首页 1-052-108-000 ==========
     ErrorCode HOME_METRIC_INVALID = new ErrorCode(1_052_108_001, "首页财务指标不正确");
