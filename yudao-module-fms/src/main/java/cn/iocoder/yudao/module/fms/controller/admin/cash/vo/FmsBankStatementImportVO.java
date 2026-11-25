@@ -1,0 +1,31 @@
+package cn.iocoder.yudao.module.fms.controller.admin.cash.vo;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Data;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+
+@Schema(description = "管理后台 - FMS 银行对账单导入行（标准 Excel）")
+@Data
+public class FmsBankStatementImportVO {
+
+    @Schema(description = "交易日期")
+    private LocalDate statementDate;
+
+    @Schema(description = "摘要")
+    private String summary;
+
+    @Schema(description = "收入金额")
+    private BigDecimal debitAmount;
+
+    @Schema(description = "支出金额")
+    private BigDecimal creditAmount;
+
+    @Schema(description = "余额")
+    private BigDecimal balance;
+
+    @Schema(description = "流水号")
+    private String referenceNo;
+
+}

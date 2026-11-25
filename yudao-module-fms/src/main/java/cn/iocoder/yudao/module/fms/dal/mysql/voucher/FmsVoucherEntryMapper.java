@@ -23,6 +23,52 @@ import java.util.List;
 @Mapper
 public interface FmsVoucherEntryMapper extends BaseMapperX<FmsVoucherEntryDO> {
 
+    /**
+     * 查询指定科目在期间内的分录（出纳日记账用，不含作废凭证），按凭证日期、凭证号、分录顺序排列
+     */
+    default List<FmsVoucherEntryDO> selectListBySubjectAndPeriod(Long accountSetId, Long subjectId,
+            LocalDateTime beginTime, LocalDateTime endTime) {
+        return selectJoinList(FmsVoucherEntryDO.class, new MPJLambdaWrapperX<FmsVoucherEntryDO>()
+                .selectAll(FmsVoucherEntryDO.class)
+                // voucherTime 不是分录表列，selectAll 不会带出，需显式映射（否则自动勾对的日期判断会全部跳过）
+                .selectAs("voucher_time", FmsVoucherEntryDO::getVoucherTime)
+                .innerJoin(FmsVoucherDO.class, FmsVoucherDO::getId, FmsVoucherEntryDO::getVoucherId)
+                .eq(FmsVoucherEntryDO::getAccountSetId, accountSetId)
+                .eq(FmsVoucherEntryDO::getSubjectId, subjectId)
+                .ge(FmsVoucherDO::getVoucherTime, beginTime)
+                .lt(FmsVoucherDO::getVoucherTime, endTime)
+                .ne(FmsVoucherDO::getStatus, FmsVoucherStatusEnum.VOIDED.getStatus())
+                .orderByAsc(FmsVoucherDO::getVoucherTime)
+                .orderByAsc(FmsVoucherDO::getVoucherNumber)
+                .orderByAsc(FmsVoucherEntryDO::getSort));
+    }
+
+    /**
+     * 查询指定科目在日期之前的分录（用于计算期初余额，不含作废）
+     */
+    default List<FmsVoucherEntryDO> selectListBySubjectBefore(Long accountSetId, Long subjectId,
+            LocalDateTime beforeTime) {
+        return selectJoinList(FmsVoucherEntryDO.class, new MPJLambdaWrapperX<FmsVoucherEntryDO>()
+                .selectAll(FmsVoucherEntryDO.class)
+                .innerJoin(FmsVoucherDO.class, FmsVoucherDO::getId, FmsVoucherEntryDO::getVoucherId)
+                .eq(FmsVoucherEntryDO::getAccountSetId, accountSetId)
+                .eq(FmsVoucherEntryDO::getSubjectId, subjectId)
+                .lt(FmsVoucherDO::getVoucherTime, beforeTime)
+                .ne(FmsVoucherDO::getStatus, FmsVoucherStatusEnum.VOIDED.getStatus()));
+    }
+
+    /**
+     * 按分录编号批量查询（限定账套）
+     */
+    default List<FmsVoucherEntryDO> selectListByIdsAndAccountSetId(Collection<Long> ids, Long accountSetId) {
+        return selectJoinList(FmsVoucherEntryDO.class, new MPJLambdaWrapperX<FmsVoucherEntryDO>()
+                .selectAll(FmsVoucherEntryDO.class)
+                .selectAs("voucher_time", FmsVoucherEntryDO::getVoucherTime)
+                .innerJoin(FmsVoucherDO.class, FmsVoucherDO::getId, FmsVoucherEntryDO::getVoucherId)
+                .in(FmsVoucherEntryDO::getId, ids)
+                .eq(FmsVoucherEntryDO::getAccountSetId, accountSetId));
+    }
+
     default List<FmsVoucherEntryDO> selectListByVoucherId(Long voucherId) {
         return selectList(new LambdaQueryWrapperX<FmsVoucherEntryDO>()
                 .eq(FmsVoucherEntryDO::getVoucherId, voucherId)

@@ -212,4 +212,16 @@ public interface ErrorCodeConstants {
     // ========== 首页 1-052-108-000 ==========
     ErrorCode HOME_METRIC_INVALID = new ErrorCode(1_052_108_001, "首页财务指标不正确");
 
+    // ========== 出纳与银行对账 1-052-109-000 ==========
+    ErrorCode CASH_BANK_SUBJECT_INVALID = new ErrorCode(1_052_109_000, "银行存款科目不存在或不是末级科目");
+    ErrorCode CASH_SUBJECT_INVALID = new ErrorCode(1_052_109_001, "库存现金科目不存在或不是末级科目");
+    ErrorCode BANK_STATEMENT_IMPORT_EMPTY = new ErrorCode(1_052_109_002, "导入的银行对账单没有有效数据");
+    ErrorCode BANK_STATEMENT_IMPORT_ROW_INVALID = new ErrorCode(1_052_109_003, "第 {} 行数据格式不正确：{}");
+    ErrorCode BANK_STATEMENT_NOT_EXISTS = new ErrorCode(1_052_109_004, "银行对账单不存在");
+    ErrorCode CASH_ENTRY_NOT_EXISTS = new ErrorCode(1_052_109_005, "凭证分录不存在或不属于该账套");
+    ErrorCode CASH_ENTRY_SUBJECT_INVALID = new ErrorCode(1_052_109_006, "该分录科目不是库存现金或银行存款，不能出纳勾对");
+    ErrorCode BANK_RECONCILE_PERIOD_CLOSED = new ErrorCode(1_052_109_007, "该会计期间已结账，不能修改对账状态");
+    ErrorCode BANK_RECONCILE_NOT_BALANCED = new ErrorCode(1_052_109_008, "银行余额调节表不平衡，调节后余额两边相差 {} 元");
+    ErrorCode BANK_STATEMENT_DUPLICATE = new ErrorCode(1_052_109_009, "银行流水号 {} 已导入，不能重复导入");
+
 }

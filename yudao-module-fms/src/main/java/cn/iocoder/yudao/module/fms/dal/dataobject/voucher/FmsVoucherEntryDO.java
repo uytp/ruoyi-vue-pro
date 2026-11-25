@@ -102,6 +102,17 @@ public class FmsVoucherEntryDO extends BaseDO {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<AuxiliaryItem> auxiliaries;
     /**
+     * 出纳已勾对（库存现金、银行存款分录的单边勾对标记）
+     */
+    @TableField("cash_reconciled")
+    private Boolean cashReconciled;
+
+    /**
+     * 凭证日期（联表查询时赋值，非分录表字段）
+     */
+    @TableField(exist = false)
+    private java.time.LocalDateTime voucherTime;
+    /**
      * 外币币别编号；为空表示本位币分录
      *
      * 关联 {@link cn.iocoder.yudao.module.fms.dal.dataobject.config.FmsCurrencyDO#getId()}
