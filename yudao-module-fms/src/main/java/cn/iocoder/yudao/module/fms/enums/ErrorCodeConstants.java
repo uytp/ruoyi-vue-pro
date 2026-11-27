@@ -239,5 +239,7 @@ public interface ErrorCodeConstants {
     ErrorCode COST_PRODUCT_AUX_TYPE_INVALID = new ErrorCode(1_052_110_010, "产品辅助核算类别不存在，请在成本参数中重新选择");
     ErrorCode COST_SUBJECT_AUX_REQUIRED = new ErrorCode(1_052_110_011,
             "科目【{}】需要先启用【{}】辅助核算，才能按产品归集成本");
+    ErrorCode COST_REPORT_RANGE_INVALID = new ErrorCode(1_052_110_012, "开始月份不能晚于结束月份");
+    ErrorCode COST_REPORT_RANGE_TOO_LONG = new ErrorCode(1_052_110_013, "成本报表一次最多查询 36 个月");
 
 }

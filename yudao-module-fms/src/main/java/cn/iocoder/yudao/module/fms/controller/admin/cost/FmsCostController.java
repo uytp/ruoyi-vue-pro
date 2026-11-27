@@ -1,10 +1,12 @@
 package cn.iocoder.yudao.module.fms.controller.admin.cost;
 
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
+import cn.iocoder.yudao.module.fms.controller.admin.cost.vo.FmsCostReportRespVO;
 import cn.iocoder.yudao.module.fms.controller.admin.cost.vo.FmsCostSettingVO;
 import cn.iocoder.yudao.module.fms.controller.admin.cost.vo.FmsCostSheetCalcReqVO;
 import cn.iocoder.yudao.module.fms.controller.admin.cost.vo.FmsCostSheetRespVO;
 import cn.iocoder.yudao.module.fms.service.cost.FmsCostService;
+import cn.iocoder.yudao.module.fms.service.cost.FmsCostReportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
@@ -24,6 +26,8 @@ public class FmsCostController {
 
     @Resource
     private FmsCostService costService;
+    @Resource
+    private FmsCostReportService costReportService;
 
     @GetMapping("/setting/get")
     @Operation(summary = "获得成本参数（没设置过时返回按常用科目编码推荐的默认值）")
@@ -69,6 +73,16 @@ public class FmsCostController {
     public CommonResult<FmsCostSheetRespVO> revokeCostVouchers(@RequestParam("accountSetId") Long accountSetId,
             @RequestParam("period") String period) {
         return success(costService.revokeCostVouchers(accountSetId, period, getLoginUserId()));
+    }
+
+    @GetMapping("/report/get")
+    @Operation(summary = "获得成本报表（产品成本汇总表 + 成本明细表）")
+    @PreAuthorize("@ss.hasPermission('fms:cost:query')")
+    public CommonResult<FmsCostReportRespVO> getCostReport(@RequestParam("accountSetId") Long accountSetId,
+            @RequestParam("startPeriod") String startPeriod, @RequestParam("endPeriod") String endPeriod,
+            @RequestParam(value = "includeDraft", defaultValue = "true") boolean includeDraft) {
+        return success(costReportService.getCostReport(accountSetId, startPeriod, endPeriod, includeDraft,
+                getLoginUserId()));
     }
 
 }

@@ -21,4 +21,11 @@ public interface FmsCostSheetItemMapper extends BaseMapperX<FmsCostSheetItemDO> 
         delete(new LambdaQueryWrapperX<FmsCostSheetItemDO>().eq(FmsCostSheetItemDO::getSheetId, sheetId));
     }
 
+    default List<FmsCostSheetItemDO> selectListBySheetIds(java.util.Collection<Long> sheetIds) {
+        if (sheetIds == null || sheetIds.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        return selectList(new LambdaQueryWrapperX<FmsCostSheetItemDO>().in(FmsCostSheetItemDO::getSheetId, sheetIds));
+    }
+
 }
