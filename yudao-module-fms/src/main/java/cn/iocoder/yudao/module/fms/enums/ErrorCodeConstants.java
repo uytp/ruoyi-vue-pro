@@ -224,4 +224,20 @@ public interface ErrorCodeConstants {
     ErrorCode BANK_RECONCILE_NOT_BALANCED = new ErrorCode(1_052_109_008, "银行余额调节表不平衡，调节后余额两边相差 {} 元");
     ErrorCode BANK_STATEMENT_DUPLICATE = new ErrorCode(1_052_109_009, "银行流水号 {} 已导入，不能重复导入");
 
+    // ========== 成本核算 1-052-110-000 ==========
+    ErrorCode COST_SETTING_NOT_CONFIGURED = new ErrorCode(1_052_110_000, "请先在【成本参数】里设置成本科目");
+    ErrorCode COST_SUBJECT_INVALID = new ErrorCode(1_052_110_001, "成本参数中的科目【{}】不存在、已停用或不是末级科目");
+    ErrorCode COST_PERIOD_CLOSED = new ErrorCode(1_052_110_002, "该会计期间已结账，不能计算成本或生成成本凭证");
+    ErrorCode COST_SHEET_VOUCHER_GENERATED = new ErrorCode(1_052_110_003, "本期成本凭证已生成，请先撤销凭证再重新计算");
+    ErrorCode COST_SHEET_NOT_EXISTS = new ErrorCode(1_052_110_004, "本期还没有成本计算单，请先计算成本");
+    ErrorCode COST_ALLOC_BASE_EMPTY = new ErrorCode(1_052_110_005,
+            "本期制造费用 {} 元需要分配，但所有产品的分配标准（{}）都是 0，请先填写");
+    ErrorCode COST_SALES_QTY_EXCEED = new ErrorCode(1_052_110_006, "产品【{}】销售数量 {} 超过可售数量 {}");
+    ErrorCode COST_NOTHING_TO_GENERATE = new ErrorCode(1_052_110_007, "本期没有可生成凭证的成本数据");
+    ErrorCode COST_PERIOD_INVALID = new ErrorCode(1_052_110_008, "会计期间格式不正确，应为 yyyy-MM");
+    ErrorCode COST_VOUCHER_NOT_GENERATED = new ErrorCode(1_052_110_009, "本期还没有生成成本凭证");
+    ErrorCode COST_PRODUCT_AUX_TYPE_INVALID = new ErrorCode(1_052_110_010, "产品辅助核算类别不存在，请在成本参数中重新选择");
+    ErrorCode COST_SUBJECT_AUX_REQUIRED = new ErrorCode(1_052_110_011,
+            "科目【{}】需要先启用【{}】辅助核算，才能按产品归集成本");
+
 }
