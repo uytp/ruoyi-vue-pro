@@ -76,6 +76,9 @@ public class FmsAssetRespVO {
     @Schema(description = "第一次计提折旧的月份 yyyy-MM；在用的资产才有", example = "2027-01")
     private String firstDeprMonth;
 
+    @Schema(description = "应该折旧但因为已经结账、没有计提的月数（只是提醒，需要补的话用“进入系统前已折旧”录入）", example = "1")
+    private Integer missedMonths;
+
     @Schema(description = "状态：0 在用 1 已处置", example = "0")
     private Integer status;
 

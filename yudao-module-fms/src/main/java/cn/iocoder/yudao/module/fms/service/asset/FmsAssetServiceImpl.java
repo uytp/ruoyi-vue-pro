@@ -19,6 +19,7 @@ import cn.iocoder.yudao.module.fms.dal.mysql.asset.FmsAssetCategoryMapper;
 import cn.iocoder.yudao.module.fms.dal.mysql.asset.FmsAssetDepreciationMapper;
 import cn.iocoder.yudao.module.fms.dal.mysql.asset.FmsAssetMapper;
 import cn.iocoder.yudao.module.fms.enums.voucher.FmsVoucherStatusEnum;
+import cn.iocoder.yudao.module.fms.service.closing.FmsClosingPeriodService;
 import cn.iocoder.yudao.module.fms.service.config.FmsAccountSetService;
 import cn.iocoder.yudao.module.fms.service.config.FmsSubjectService;
 import cn.iocoder.yudao.module.fms.service.config.FmsVoucherWordService;
@@ -26,6 +27,7 @@ import cn.iocoder.yudao.module.fms.service.ledger.FmsLedgerService;
 import cn.iocoder.yudao.module.fms.service.voucher.FmsVoucherService;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import jakarta.annotation.Resource;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -74,6 +76,9 @@ public class FmsAssetServiceImpl implements FmsAssetService {
     private FmsVoucherWordService voucherWordService;
     @Resource
     private FmsLedgerService ledgerService;
+    @Resource
+    @Lazy // 延迟加载，避免与结账 Service 循环依赖
+    private FmsClosingPeriodService closingPeriodService;
 
     // ==================== 资产类别 ====================
 
@@ -163,6 +168,7 @@ public class FmsAssetServiceImpl implements FmsAssetService {
         Map<Long, FmsAssetCategoryDO> categoryMap = convertMap(categoryMapper.selectListByAccountSetId(accountSetId),
                 FmsAssetCategoryDO::getId);
         Map<Long, List<FmsAssetDepreciationDO>> recordMap = groupByAsset(loadRecords(accountSetId, userId, false));
+        YearMonth open = currentOpenPeriod(accountSetId, userId);
         List<FmsAssetRespVO> result = new ArrayList<>();
         String key = keyword == null ? "" : keyword.trim().toLowerCase();
         for (FmsAssetDO asset : assetMapper.selectListByAccountSetId(accountSetId)) {
@@ -176,7 +182,7 @@ public class FmsAssetServiceImpl implements FmsAssetService {
                 continue;
             }
             result.add(toResp(asset, categoryMap.get(asset.getCategoryId()),
-                    recordMap.getOrDefault(asset.getId(), Collections.emptyList()), accountStart));
+                    recordMap.getOrDefault(asset.getId(), Collections.emptyList()), accountStart, open));
         }
         return result;
     }
@@ -237,12 +243,17 @@ public class FmsAssetServiceImpl implements FmsAssetService {
             }
         }
 
-        // 4. 新资产的开始折旧月份，不能早于已经计提过折旧的月份（否则中间会缺一段）
+        // 4. 新资产的开始折旧月份，不能早于已经计提过折旧的月份（否则那几个月就缺这个资产）。
+        //    已经结账的月份不能再补提，所以实际开始月份至少是当前未结账的月份
         if (!hasRecords) {
             YearMonth accountStart = YearMonth.from(accountSet.getStartTime());
             YearMonth first = YearMonth.from(startDate).plusMonths(1);
             if (first.isBefore(accountStart)) {
                 first = accountStart;
+            }
+            YearMonth open = currentOpenPeriod(accountSetId, userId);
+            if (first.isBefore(open)) {
+                first = open;
             }
             String latest = latestPeriod(loadRecords(accountSetId, userId, false));
             if (latest != null && !first.isAfter(YearMonth.parse(latest))) {
@@ -319,7 +330,8 @@ public class FmsAssetServiceImpl implements FmsAssetService {
         boolean hasThisMonth = records.stream().anyMatch(r -> disposeMonth.toString().equals(r.getPeriod()));
         int depreciatedMonths = asset.getInitDeprMonths() + records.size();
         YearMonth accountStart = YearMonth.from(accountSet.getStartTime());
-        if (!hasThisMonth && !disposeMonth.isBefore(accountStart)
+        YearMonth open = currentOpenPeriod(accountSetId, userId);
+        if (!hasThisMonth && !disposeMonth.isBefore(accountStart) && !disposeMonth.isBefore(open)
                 && FmsAssetCalculator.started(asset.getStartDate(), disposeMonth)
                 && depreciatedMonths < asset.getLifeMonths()
                 && asset.getInitAccumDepr().add(sum(records)).compareTo(
@@ -423,7 +435,9 @@ public class FmsAssetServiceImpl implements FmsAssetService {
                 addRow(resp, total, categoryRows, calc.asset, categoryMap.get(calc.asset.getCategoryId()), subjectMap,
                         calc.amount, calc.accumAfter, calc.netAfter, calc.monthsAfter);
             }
-            if (!ym.minusMonths(1).isBefore(accountStart) && !calcPeriod(ym.minusMonths(1), assets, recordMap).isEmpty()) {
+            YearMonth open = currentOpenPeriod(accountSetId, userId);
+            if (!ym.minusMonths(1).isBefore(accountStart) && !ym.minusMonths(1).isBefore(open)
+                    && !calcPeriod(ym.minusMonths(1), assets, recordMap).isEmpty()) {
                 resp.getWarnings().add("上个月（" + ym.minusMonths(1) + "）的折旧还没有计提，请先计提上个月，再计提这个月");
             }
         }
@@ -452,7 +466,9 @@ public class FmsAssetServiceImpl implements FmsAssetService {
         List<FmsAssetDO> assets = assetMapper.selectListByAccountSetId(accountSetId);
         Map<Long, List<FmsAssetDepreciationDO>> recordMap = groupByAsset(records);
         // 折旧要一个月一个月往后做：上个月该提的没提，不让提这个月
-        if (!ym.minusMonths(1).isBefore(accountStart) && !calcPeriod(ym.minusMonths(1), assets, recordMap).isEmpty()) {
+        YearMonth open = currentOpenPeriod(accountSetId, userId);
+        if (!ym.minusMonths(1).isBefore(accountStart) && !ym.minusMonths(1).isBefore(open)
+                && !calcPeriod(ym.minusMonths(1), assets, recordMap).isEmpty()) {
             throw exception(ASSET_DEPRECIATION_PREV_MISSING, ym.minusMonths(1).toString());
         }
         List<Calc> calcs = calcPeriod(ym, assets, recordMap);
@@ -701,7 +717,7 @@ public class FmsAssetServiceImpl implements FmsAssetService {
     }
 
     private FmsAssetRespVO toResp(FmsAssetDO asset, FmsAssetCategoryDO category, List<FmsAssetDepreciationDO> records,
-            YearMonth accountStart) {
+            YearMonth accountStart, YearMonth open) {
         FmsAssetRespVO vo = new FmsAssetRespVO();
         vo.setId(asset.getId());
         vo.setCode(asset.getCode());
@@ -727,8 +743,20 @@ public class FmsAssetServiceImpl implements FmsAssetService {
         vo.setNetValue(asset.getOriginalValue().subtract(accum));
         vo.setMonthlyDepr(FmsAssetCalculator.standardMonthly(asset.getOriginalValue(), asset.getResidualValue(),
                 asset.getLifeMonths()));
-        YearMonth first = YearMonth.from(asset.getStartDate()).plusMonths(1);
-        vo.setFirstDeprMonth((first.isBefore(accountStart) ? accountStart : first).toString());
+        // 计划从启用月份的下个月（且不早于账套启用月份）开始；实际是第一条折旧记录的月份，
+        // 还没有记录的话，已结账的月份补不了，只能从当前未结账的月份开始
+        YearMonth planned = YearMonth.from(asset.getStartDate()).plusMonths(1);
+        if (planned.isBefore(accountStart)) {
+            planned = accountStart;
+        }
+        YearMonth actual = open.isAfter(planned) ? open : planned;
+        if (!records.isEmpty()) {
+            actual = YearMonth.parse(records.get(0).getPeriod());
+        }
+        vo.setFirstDeprMonth(actual.toString());
+        boolean inUse = ObjUtil.equal(asset.getStatus(), FmsAssetDO.STATUS_IN_USE);
+        vo.setMissedMonths(inUse && actual.isAfter(planned)
+                ? (int) java.time.temporal.ChronoUnit.MONTHS.between(planned, actual) : 0);
         vo.setStatus(asset.getStatus());
         vo.setDisposeDate(asset.getDisposeDate());
         vo.setDisposeVoucherId(asset.getDisposeVoucherId());
@@ -918,6 +946,13 @@ public class FmsAssetServiceImpl implements FmsAssetService {
             throw exception(ASSET_NOT_EXISTS);
         }
         return asset;
+    }
+
+    /**
+     * 当前未结账的会计期间。比它早的月份都已经结账，不能再生成折旧凭证
+     */
+    private YearMonth currentOpenPeriod(Long accountSetId, Long userId) {
+        return YearMonth.parse(closingPeriodService.getCurrentMonth(accountSetId, userId));
     }
 
     /**
