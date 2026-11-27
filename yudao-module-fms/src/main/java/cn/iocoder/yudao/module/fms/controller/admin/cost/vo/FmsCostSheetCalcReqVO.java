@@ -24,4 +24,7 @@ public class FmsCostSheetCalcReqVO {
     @Valid
     private List<FmsCostSheetItemVO> items;
 
+    @Schema(description = "要从本期成本单里移除的产品行（只对没有本期发生额、也没有上月带入的行生效；有凭证或上月带入的行会自动回来）")
+    private List<Long> removeProductItemIds;
+
 }

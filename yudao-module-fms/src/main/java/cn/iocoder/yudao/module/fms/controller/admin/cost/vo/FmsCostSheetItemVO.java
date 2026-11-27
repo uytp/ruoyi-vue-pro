@@ -1,6 +1,7 @@
 package cn.iocoder.yudao.module.fms.controller.admin.cost.vo;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.DecimalMin;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -20,25 +21,38 @@ public class FmsCostSheetItemVO {
 
     // ===== 手工录入 =====
     @Schema(description = "生产工时")
+    @DecimalMin(value = "0", message = "生产工时不能小于 0")
     private BigDecimal workHours;
     @Schema(description = "本期完工数量")
+    @DecimalMin(value = "0", message = "本期完工数量不能小于 0")
     private BigDecimal completedQty;
     @Schema(description = "期末在产品数量")
+    @DecimalMin(value = "0", message = "期末在产品数量不能小于 0")
     private BigDecimal wipQty;
     @Schema(description = "在产品完工程度（%）")
+    @DecimalMin(value = "0", message = "完工程度不能小于 0")
     private BigDecimal wipProgress;
     @Schema(description = "本期销售数量")
+    @DecimalMin(value = "0", message = "本期销售数量不能小于 0")
     private BigDecimal salesQty;
-    @Schema(description = "期初在产品-直接材料（上期有计算单时自动带入）")
+    @Schema(description = "期初在产品-直接材料（上月有成本单的产品自动带入，不能改；第一次使用或新产品才能手工录入）")
+    @DecimalMin(value = "0", message = "期初在产品-直接材料不能小于 0")
     private BigDecimal beginWipMaterial;
     @Schema(description = "期初在产品-直接人工")
+    @DecimalMin(value = "0", message = "期初在产品-直接人工不能小于 0")
     private BigDecimal beginWipLabor;
     @Schema(description = "期初在产品-制造费用")
+    @DecimalMin(value = "0", message = "期初在产品-制造费用不能小于 0")
     private BigDecimal beginWipOverhead;
     @Schema(description = "期初库存数量")
+    @DecimalMin(value = "0", message = "期初库存数量不能小于 0")
     private BigDecimal beginStockQty;
     @Schema(description = "期初库存金额")
+    @DecimalMin(value = "0", message = "期初库存金额不能小于 0")
     private BigDecimal beginStockAmount;
+
+    @Schema(description = "期初数是否由上月成本单自动带入（true 时期初数不能手工改）；只在返回结果里有意义")
+    private Boolean beginCarried;
 
     // ===== 计算结果 =====
     @Schema(description = "本期直接材料（从凭证归集）")

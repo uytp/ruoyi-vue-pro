@@ -236,16 +236,21 @@ public class FmsCostServiceImpl implements FmsCostService {
 
         // 2. 期初：上月有计算单时，期初在产品和期初库存自动取上月期末
         FmsCostSheetDO prevSheet = sheetMapper.selectByAccountSetIdAndPeriod(accountSetId, month.minusMonths(1).toString());
+        // 上月成本单里有行的产品：期初由上月决定，不能手工改；没有上月成本单或新产品：期初可以手工录入
+        Set<Long> carriedProductIds = new HashSet<>();
         if (prevSheet != null) {
             for (FmsCostSheetItemDO prev : sheetItemMapper.selectListBySheetId(prevSheet.getId())) {
+                carriedProductIds.add(prev.getProductItemId());
                 boolean hasBalance = nvl(prev.getEndWipMaterial()).signum() != 0
                         || nvl(prev.getEndWipLabor()).signum() != 0
                         || nvl(prev.getEndWipOverhead()).signum() != 0
                         || nvl(prev.getEndStockQty()).signum() != 0
                         || nvl(prev.getEndStockAmount()).signum() != 0;
+                // 上月没有余额、本月也还没有这一行：不用为它新建行（需要时用户可以【添加产品】）
                 if (!hasBalance && !rows.containsKey(prev.getProductItemId())) {
                     continue;
                 }
+                // 本月已有这一行（比如请求里带了手工期初）：无论上月有没有余额，期初都以上月为准
                 FmsCostSheetItemDO row = rows.computeIfAbsent(prev.getProductItemId(),
                         id -> newRow(accountSetId, id));
                 row.setBeginWipMaterial(nvl(prev.getEndWipMaterial()));
@@ -261,6 +266,9 @@ public class FmsCostServiceImpl implements FmsCostService {
 
         // 4. 补全产品名称
         fillProductInfo(accountSetId, rows.values());
+
+        // 4.1 移除用户不要的产品行：只移除“没有任何数据”的空行；有上月带入、本期发生额或期初余额的行不能移除
+        removeEmptyRows(reqVO.getRemoveProductItemIds(), rows, carriedProductIds, warnings);
 
         // 5. 分配制造费用并逐个产品计算
         List<FmsCostSheetItemDO> items = new ArrayList<>(rows.values());
@@ -307,7 +315,7 @@ public class FmsCostServiceImpl implements FmsCostService {
         if (!items.isEmpty()) {
             sheetItemMapper.insertBatch(items);
         }
-        return buildResp(sheet, items, warnings);
+        return buildResp(sheet, items, warnings, carriedProductIds);
     }
 
     /**
@@ -446,6 +454,52 @@ public class FmsCostServiceImpl implements FmsCostService {
         to.setBeginStockAmount(nvl(from.getBeginStockAmount()));
     }
 
+    /**
+     * 上月成本单里有行的产品编号：这些产品的期初数由上月带入，不能手工改
+     */
+    private Set<Long> getCarriedProductIds(Long accountSetId, YearMonth month) {
+        Set<Long> result = new HashSet<>();
+        FmsCostSheetDO prevSheet = sheetMapper.selectByAccountSetIdAndPeriod(accountSetId, month.minusMonths(1).toString());
+        if (prevSheet != null) {
+            for (FmsCostSheetItemDO prev : sheetItemMapper.selectListBySheetId(prevSheet.getId())) {
+                result.add(prev.getProductItemId());
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 移除用户选择删掉的产品行。只有“空行”才能被移除：
+     * 没有上月带入、本期没有直接材料/直接人工发生额、也没有手工录的期初余额。
+     * 不满足条件的行保留，并给出提醒，避免用户误以为已经删掉
+     */
+    private void removeEmptyRows(List<Long> removeIds, Map<Long, FmsCostSheetItemDO> rows,
+            Set<Long> carriedProductIds, List<String> warnings) {
+        if (CollUtil.isEmpty(removeIds)) {
+            return;
+        }
+        for (Long productItemId : new LinkedHashSet<>(removeIds)) {
+            FmsCostSheetItemDO row = rows.get(productItemId);
+            if (row == null) {
+                continue;
+            }
+            boolean carried = carriedProductIds.contains(productItemId);
+            boolean hasCurrent = nvl(row.getCurMaterial()).signum() != 0 || nvl(row.getCurLabor()).signum() != 0;
+            boolean hasBegin = nvl(row.getBeginWipMaterial()).signum() != 0
+                    || nvl(row.getBeginWipLabor()).signum() != 0
+                    || nvl(row.getBeginWipOverhead()).signum() != 0
+                    || nvl(row.getBeginStockQty()).signum() != 0
+                    || nvl(row.getBeginStockAmount()).signum() != 0;
+            if (carried || hasCurrent || hasBegin) {
+                String reason = carried ? "上月成本单里有这个产品，期初由上月带入"
+                        : hasCurrent ? "本月凭证里有这个产品的直接材料或直接人工" : "已经录了期初数据，请先把期初改成 0";
+                warnings.add("产品【" + row.getProductName() + "】没有被移除：" + reason);
+                continue;
+            }
+            rows.remove(productItemId);
+        }
+    }
+
     private static void applyInput(FmsCostSheetItemVO in, FmsCostSheetItemDO row) {
         if (in.getWorkHours() != null) {
             row.setWorkHours(in.getWorkHours());
@@ -480,6 +534,12 @@ public class FmsCostServiceImpl implements FmsCostService {
     }
 
     private FmsCostSheetRespVO buildResp(FmsCostSheetDO sheet, List<FmsCostSheetItemDO> items, List<String> warnings) {
+        YearMonth month = YearMonth.parse(sheet.getPeriod());
+        return buildResp(sheet, items, warnings, getCarriedProductIds(sheet.getAccountSetId(), month));
+    }
+
+    private FmsCostSheetRespVO buildResp(FmsCostSheetDO sheet, List<FmsCostSheetItemDO> items,
+            List<String> warnings, Set<Long> carriedProductIds) {
         FmsCostSheetRespVO resp = new FmsCostSheetRespVO();
         resp.setId(sheet.getId());
         resp.setAccountSetId(sheet.getAccountSetId());
@@ -490,6 +550,8 @@ public class FmsCostServiceImpl implements FmsCostService {
         resp.setDoneVoucherId(sheet.getDoneVoucherId());
         resp.setCogsVoucherId(sheet.getCogsVoucherId());
         resp.setItems(BeanUtils.toBean(items, FmsCostSheetItemVO.class));
+        resp.getItems().forEach(item ->
+                item.setBeginCarried(carriedProductIds.contains(item.getProductItemId())));
         resp.setWarnings(new ArrayList<>(warnings));
         return resp;
     }
