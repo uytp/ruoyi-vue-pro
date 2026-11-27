@@ -257,4 +257,32 @@ public interface ErrorCodeConstants {
     ErrorCode SETTLE_ENTRY_SETTLED = new ErrorCode(1_052_111_011, "这张凭证里有分录已经做过往来核销，请先到【往来核销】撤销核销，再修改、删除或作废");
     ErrorCode SETTLE_DATE_INVALID = new ErrorCode(1_052_111_012, "核销日期不能早于所选凭证中最晚的日期 {}");
 
+    // ========== 固定资产 1-052-112-000 ==========
+    ErrorCode ASSET_CATEGORY_CODE_DUPLICATE = new ErrorCode(1_052_112_000, "类别编码 {} 已存在");
+    ErrorCode ASSET_CATEGORY_NOT_EXISTS = new ErrorCode(1_052_112_001, "资产类别不存在");
+    ErrorCode ASSET_CATEGORY_USED = new ErrorCode(1_052_112_002, "类别【{}】下还有资产卡片，不能删除");
+    ErrorCode ASSET_CATEGORY_SUBJECT_INVALID = new ErrorCode(1_052_112_003, "【{}】科目不存在、已停用或不是末级科目");
+    ErrorCode ASSET_CODE_DUPLICATE = new ErrorCode(1_052_112_004, "资产编号 {} 已存在");
+    ErrorCode ASSET_NOT_EXISTS = new ErrorCode(1_052_112_005, "资产卡片不存在");
+    ErrorCode ASSET_VALUE_INVALID = new ErrorCode(1_052_112_006, "原值必须大于 0，净残值率必须在 0 到 100 之间，折旧月数必须大于 0");
+    ErrorCode ASSET_INIT_INVALID = new ErrorCode(1_052_112_007, "已折旧月数不能超过折旧月数，已提累计折旧不能超过“原值 - 净残值”");
+    ErrorCode ASSET_DISPOSED = new ErrorCode(1_052_112_008, "资产【{}】已处置，不能再修改、删除或计提折旧");
+    ErrorCode ASSET_HAS_DEPRECIATION = new ErrorCode(1_052_112_009, "资产【{}】已经计提过折旧，类别、启用日期、原值、净残值率、折旧月数、已折旧情况不能再修改");
+    ErrorCode ASSET_DELETE_HAS_DEPRECIATION = new ErrorCode(1_052_112_010, "资产【{}】已有折旧记录，不能删除");
+    ErrorCode ASSET_PERIOD_INVALID = new ErrorCode(1_052_112_011, "会计期间格式不正确，应为 yyyy-MM");
+    ErrorCode ASSET_PERIOD_BEFORE_START = new ErrorCode(1_052_112_012, "{} 早于账套启用月份 {}，不能计提折旧");
+    ErrorCode ASSET_DEPRECIATION_GENERATED = new ErrorCode(1_052_112_013, "{} 的折旧已经计提，请先撤销再重新计提");
+    ErrorCode ASSET_DEPRECIATION_PREV_MISSING = new ErrorCode(1_052_112_014, "请先计提 {} 的折旧（折旧要一个月一个月往后做）");
+    ErrorCode ASSET_DEPRECIATION_NOTHING = new ErrorCode(1_052_112_015, "{} 没有需要计提折旧的资产");
+    ErrorCode ASSET_DEPRECIATION_NOT_GENERATED = new ErrorCode(1_052_112_016, "{} 还没有计提折旧");
+    ErrorCode ASSET_DEPRECIATION_REVOKE_DISPOSED = new ErrorCode(1_052_112_017, "资产【{}】已经处置，请先撤销处置，再撤销这个月的折旧");
+    ErrorCode ASSET_DEPRECIATION_REVOKE_NEWER = new ErrorCode(1_052_112_018, "只能从最近计提的月份往前撤销，请先撤销 {} 的折旧");
+    ErrorCode ASSET_DISPOSE_DEPR_MISSING = new ErrorCode(1_052_112_019, "请先计提 {} 的折旧再处置资产（当月减少的资产当月仍计提折旧）");
+    ErrorCode ASSET_DISPOSE_DATE_INVALID = new ErrorCode(1_052_112_020, "处置日期不能早于启用日期 {}");
+    ErrorCode ASSET_DISPOSE_LATER_DEPR = new ErrorCode(1_052_112_021, "资产在 {} 之后还有折旧记录，请先撤销之后月份的折旧再处置");
+    ErrorCode ASSET_CLEARING_SUBJECT_MISSING = new ErrorCode(1_052_112_022, "没有找到“固定资产清理”科目（编码 1606），请先在科目设置里添加");
+    ErrorCode ASSET_NOT_DISPOSED = new ErrorCode(1_052_112_023, "资产【{}】还没有处置");
+    ErrorCode ASSET_DEPRECIATION_NO_EXPENSE = new ErrorCode(1_052_112_024, "类别【{}】的折旧科目设置不完整，请先到类别管理里补全");
+    ErrorCode ASSET_START_TOO_EARLY = new ErrorCode(1_052_112_025, "这个资产应当从 {} 开始折旧，但 {} 的折旧已经计提过了。请先撤销 {} 及之后月份的折旧再保存；旧资产请把启用日期照实填，用“进入系统前已折旧月数 / 累计折旧”录入已提部分");
+
 }
