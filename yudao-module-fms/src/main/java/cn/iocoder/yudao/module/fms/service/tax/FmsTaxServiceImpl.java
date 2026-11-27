@@ -462,7 +462,8 @@ public class FmsTaxServiceImpl implements FmsTaxService {
                     + resp.getUncertifiedTax().toPlainString() + "），认证后才能抵扣");
         }
         if (carry.signum() > 0) {
-            resp.getWarnings().add("上期留抵税额 " + carry.toPlainString() + " 已经抵扣");
+            resp.getWarnings().add("上期留抵税额 " + carry.toPlainString() + " 参与本月抵扣"
+                    + (vat.carryEnd.signum() > 0 ? "，抵不完的 " + vat.carryEnd.toPlainString() + " 继续留到下个月" : "，已经全部抵完"));
         }
 
         // 5. 与总账对数
