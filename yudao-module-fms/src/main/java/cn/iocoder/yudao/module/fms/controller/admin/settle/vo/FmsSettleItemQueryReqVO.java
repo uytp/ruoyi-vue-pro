@@ -24,4 +24,7 @@ public class FmsSettleItemQueryReqVO {
     @NotNull(message = "往来单位不能为空")
     private Long auxiliaryItemId;
 
+    @Schema(description = "截止月份 yyyy-MM；不传表示看当前最新状态，传了就按这个月最后一天算账龄和已核销金额", example = "2027-01")
+    private String month;
+
 }

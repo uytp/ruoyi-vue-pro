@@ -114,15 +114,26 @@ public class FmsSettleServiceImpl implements FmsSettleService {
         Context ctx = buildContext(reqVO.getAccountSetId(), reqVO.getSubjectId(), reqVO.getAuxiliaryTypeId(),
                 userId, false);
         validateItem(ctx, reqVO.getAuxiliaryItemId(), userId);
+        // 传了截止月份，就按那个月最后一天的状态来看（账龄分析里点开明细时用）
+        LocalDate asOfDate = null;
+        LocalDateTime endTime = FAR_FUTURE;
+        if (reqVO.getMonth() != null && !reqVO.getMonth().isBlank()) {
+            try {
+                asOfDate = YearMonth.parse(reqVO.getMonth()).atEndOfMonth();
+            } catch (DateTimeParseException e) {
+                throw exception(SETTLE_MONTH_INVALID);
+            }
+            endTime = asOfDate.plusDays(1).atStartOfDay();
+        }
         List<FmsSettleCalculator.Item> items = buildItemMap(ctx, Set.of(reqVO.getAuxiliaryItemId()),
-                FAR_FUTURE, null).getOrDefault(reqVO.getAuxiliaryItemId(), Collections.emptyList());
-        LocalDate today = LocalDate.now();
+                endTime, asOfDate).getOrDefault(reqVO.getAuxiliaryItemId(), Collections.emptyList());
+        LocalDate ageDate = asOfDate != null ? asOfDate : LocalDate.now();
         FmsSettleOpenItemsRespVO resp = new FmsSettleOpenItemsRespVO();
         for (FmsSettleCalculator.Item item : items) {
             if (item.remain.signum() <= 0) {
                 continue;
             }
-            FmsSettleOpenItemRespVO vo = toOpenItemVO(item, today);
+            FmsSettleOpenItemRespVO vo = toOpenItemVO(item, ageDate);
             if (item.debit) {
                 resp.getDebitItems().add(vo);
                 resp.setDebitRemain(resp.getDebitRemain().add(item.remain));
