@@ -46,6 +46,7 @@ import cn.iocoder.yudao.module.fms.service.config.FmsAuxiliaryItemService;
 import cn.iocoder.yudao.module.fms.service.config.FmsAuxiliaryTypeService;
 import cn.iocoder.yudao.module.fms.service.config.FmsSubjectService;
 import cn.iocoder.yudao.module.fms.service.config.FmsVoucherWordService;
+import cn.iocoder.yudao.module.fms.service.settle.FmsSettleService;
 import com.mzt.logapi.context.LogRecordContext;
 import com.mzt.logapi.starter.annotation.LogRecord;
 import jakarta.annotation.Resource;
@@ -120,6 +121,8 @@ public class FmsVoucherServiceImpl implements FmsVoucherService {
     private FmsAuxiliaryTypeService auxiliaryTypeService;
     @Resource
     private FmsAuxiliaryCombinationService auxiliaryCombinationService;
+    @Resource
+    private FmsSettleService settleService;
 
     // ==================== 凭证写操作 ====================
 
@@ -184,6 +187,8 @@ public class FmsVoucherServiceImpl implements FmsVoucherService {
         if (ObjUtil.equal(voucher.getStatus(), FmsVoucherStatusEnum.VOIDED.getStatus())) {
             throw exception(VOUCHER_VOIDED_NOT_EDITABLE);
         }
+        // 凭证里的分录如果已经做过往来核销，不能修改（修改会重建分录，核销记录就对不上了）
+        validateVouchersNotSettled(updateReqVO.getAccountSetId(), singletonList(voucher.getId()));
         // 1.4 校验原会计期间和新会计期间
         closingPeriodService.validatePeriodOpen(updateReqVO.getAccountSetId(), voucher.getVoucherTime());
         closingPeriodService.validatePeriodOpen(updateReqVO.getAccountSetId(), updateReqVO.getVoucherTime());
@@ -242,6 +247,8 @@ public class FmsVoucherServiceImpl implements FmsVoucherService {
         List<FmsVoucherDO> vouchers = validateVoucherList(accountSetId, ids);
         validateClosingVoucherEditable(accountSetId, ids);
         vouchers.forEach(this::validateVoucherEditable);
+        // 分录已经做过往来核销的凭证不能删除，要先撤销核销
+        validateVouchersNotSettled(accountSetId, ids);
         // 1.4 校验会计期间
         vouchers.forEach(voucher -> closingPeriodService.validatePeriodOpen(accountSetId, voucher.getVoucherTime()));
 
@@ -326,6 +333,15 @@ public class FmsVoucherServiceImpl implements FmsVoucherService {
                 voucher.getId(), targetPosted, posterUserId, postTime));
     }
 
+    /**
+     * 校验这些凭证的分录没有被往来核销引用
+     */
+    private void validateVouchersNotSettled(Long accountSetId, Collection<Long> voucherIds) {
+        List<Long> entryIds = convertList(voucherEntryMapper.selectListByVoucherIds(voucherIds),
+                FmsVoucherEntryDO::getId);
+        settleService.validateEntriesNotSettled(accountSetId, entryIds);
+    }
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateVoucherVoidStatus(Long accountSetId, List<Long> ids, Boolean voided, Long userId) {
@@ -339,6 +355,10 @@ public class FmsVoucherServiceImpl implements FmsVoucherService {
                 accountSetId, voucher.getVoucherTime()));
         // 1.4 校验状态流转：待审核 -> 已作废；已作废 -> 待审核
         boolean targetVoided = Boolean.TRUE.equals(voided);
+        // 作废会让分录不再计入账簿，已经做过往来核销的凭证不能作废，要先撤销核销
+        if (targetVoided) {
+            validateVouchersNotSettled(accountSetId, ids);
+        }
         Integer fromStatus = targetVoided ? FmsVoucherStatusEnum.PENDING_REVIEW.getStatus()
                 : FmsVoucherStatusEnum.VOIDED.getStatus();
         Integer toStatus = targetVoided ? FmsVoucherStatusEnum.VOIDED.getStatus()
