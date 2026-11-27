@@ -242,4 +242,18 @@ public interface ErrorCodeConstants {
     ErrorCode COST_REPORT_RANGE_INVALID = new ErrorCode(1_052_110_012, "开始月份不能晚于结束月份");
     ErrorCode COST_REPORT_RANGE_TOO_LONG = new ErrorCode(1_052_110_013, "成本报表一次最多查询 36 个月");
 
+    // ========== 往来核销与账龄 1-052-111-000 ==========
+    ErrorCode SETTLE_AUX_TYPE_INVALID = new ErrorCode(1_052_111_000, "只有客户、供应商、职员类的辅助核算可以做往来核销和账龄分析");
+    ErrorCode SETTLE_SUBJECT_INVALID = new ErrorCode(1_052_111_001, "科目【{}】没有启用对应的客户、供应商或职员辅助核算，不能做往来核销");
+    ErrorCode SETTLE_ITEM_EMPTY = new ErrorCode(1_052_111_002, "请至少选择一笔借方和一笔贷方");
+    ErrorCode SETTLE_AMOUNT_NOT_EQUAL = new ErrorCode(1_052_111_003, "借方核销合计 {} 元与贷方核销合计 {} 元不相等");
+    ErrorCode SETTLE_AMOUNT_INVALID = new ErrorCode(1_052_111_004, "核销金额必须大于 0");
+    ErrorCode SETTLE_AMOUNT_EXCEED = new ErrorCode(1_052_111_005, "【{}】可核销余额只有 {} 元，本次核销 {} 元超出");
+    ErrorCode SETTLE_REF_NOT_FOUND = new ErrorCode(1_052_111_006, "核销项目 {} 不存在、方向不对或已经没有可核销余额，请刷新后重试");
+    ErrorCode SETTLE_BATCH_NOT_EXISTS = new ErrorCode(1_052_111_007, "核销记录不存在或已被撤销");
+    ErrorCode SETTLE_MONTH_INVALID = new ErrorCode(1_052_111_008, "截止月份格式不正确，应为 yyyy-MM");
+    ErrorCode SETTLE_BUCKET_INVALID = new ErrorCode(1_052_111_009, "账龄区间格式不正确，应为从小到大的天数，用逗号隔开，例如 30,60,90,180,365");
+    ErrorCode SETTLE_ITEM_NOT_EXISTS = new ErrorCode(1_052_111_010, "往来单位不存在，请重新选择");
+    ErrorCode SETTLE_ENTRY_SETTLED = new ErrorCode(1_052_111_011, "这张凭证里有分录已经做过往来核销，请先到【往来核销】撤销核销，再修改、删除或作废");
+
 }
