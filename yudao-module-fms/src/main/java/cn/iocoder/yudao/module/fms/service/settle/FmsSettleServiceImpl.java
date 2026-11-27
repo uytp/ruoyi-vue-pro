@@ -159,9 +159,19 @@ public class FmsSettleServiceImpl implements FmsSettleService {
             throw exception(SETTLE_AMOUNT_NOT_EQUAL, formatAmount(debitTotal), formatAmount(creditTotal));
         }
 
-        // 3. 配对并保存，同一次核销共用一个批次号
+        // 3. 核销日期：不填就取“今天”和“所选凭证最晚日期”中较晚的一个；手填的不能早于所选凭证
+        LocalDate latestDate = latestItemDate(itemMap, debits, credits);
+        LocalDate settleDate = reqVO.getSettleDate();
+        if (settleDate != null && settleDate.isBefore(latestDate)) {
+            throw exception(SETTLE_DATE_INVALID, latestDate.toString());
+        }
+        if (settleDate == null) {
+            settleDate = laterDate(LocalDate.now(), latestDate);
+        }
+
+        // 4. 配对并保存，同一次核销共用一个批次号
         return saveBatch(ctx, reqVO.getAuxiliaryItemId(), FmsSettleCalculator.allocate(debits, credits),
-                reqVO.getSettleDate() != null ? reqVO.getSettleDate() : LocalDate.now(), reqVO.getRemark());
+                settleDate, reqVO.getRemark());
     }
 
     @Override
@@ -176,7 +186,6 @@ public class FmsSettleServiceImpl implements FmsSettleService {
             itemIds = Set.of(reqVO.getAuxiliaryItemId());
         }
         int count = 0;
-        LocalDate today = LocalDate.now();
         for (Map.Entry<Long, List<FmsSettleCalculator.Item>> entry
                 : buildItemMap(ctx, itemIds, FAR_FUTURE, null).entrySet()) {
             List<FmsSettleCalculator.Item> debits = new ArrayList<>();
@@ -186,9 +195,12 @@ public class FmsSettleServiceImpl implements FmsSettleService {
                     (item.debit ? debits : credits).add(item);
                 }
             }
+            Map<String, FmsSettleCalculator.Item> byRef = convertMap(entry.getValue(), item -> item.ref);
             // 每一对单独成一个批次，撤销时可以只撤销其中一对
             for (FmsSettleCalculator.Pair pair : FmsSettleCalculator.autoMatch(debits, credits)) {
-                saveBatch(ctx, entry.getKey(), List.of(pair), today, "自动核销");
+                LocalDate settleDate = laterDate(LocalDate.now(),
+                        laterDate(byRef.get(pair.debitRef).date, byRef.get(pair.creditRef).date));
+                saveBatch(ctx, entry.getKey(), List.of(pair), settleDate, "自动核销");
                 count++;
             }
         }
@@ -522,6 +534,25 @@ public class FmsSettleServiceImpl implements FmsSettleService {
             settleRecordMapper.updateById(update);
         }
         return batchId;
+    }
+
+    private static LocalDate laterDate(LocalDate a, LocalDate b) {
+        return a.isAfter(b) ? a : b;
+    }
+
+    /**
+     * 本次核销选中的所有项目里，凭证日期最晚的那一天
+     */
+    private static LocalDate latestItemDate(Map<String, FmsSettleCalculator.Item> itemMap,
+            List<FmsSettleCalculator.Line> debits, List<FmsSettleCalculator.Line> credits) {
+        LocalDate latest = LocalDate.MIN;
+        for (FmsSettleCalculator.Line line : debits) {
+            latest = laterDate(latest, itemMap.get(line.ref).date);
+        }
+        for (FmsSettleCalculator.Line line : credits) {
+            latest = laterDate(latest, itemMap.get(line.ref).date);
+        }
+        return latest;
     }
 
     private static BigDecimal sumLines(List<FmsSettleCalculator.Line> lines) {

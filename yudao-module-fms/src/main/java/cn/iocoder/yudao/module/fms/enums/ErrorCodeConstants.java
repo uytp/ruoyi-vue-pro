@@ -255,5 +255,6 @@ public interface ErrorCodeConstants {
     ErrorCode SETTLE_BUCKET_INVALID = new ErrorCode(1_052_111_009, "账龄区间格式不正确，应为从小到大的天数，用逗号隔开，例如 30,60,90,180,365");
     ErrorCode SETTLE_ITEM_NOT_EXISTS = new ErrorCode(1_052_111_010, "往来单位不存在，请重新选择");
     ErrorCode SETTLE_ENTRY_SETTLED = new ErrorCode(1_052_111_011, "这张凭证里有分录已经做过往来核销，请先到【往来核销】撤销核销，再修改、删除或作废");
+    ErrorCode SETTLE_DATE_INVALID = new ErrorCode(1_052_111_012, "核销日期不能早于所选凭证中最晚的日期 {}");
 
 }
