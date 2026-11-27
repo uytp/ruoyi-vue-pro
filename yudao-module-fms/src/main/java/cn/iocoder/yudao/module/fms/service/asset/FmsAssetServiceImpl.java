@@ -755,7 +755,8 @@ public class FmsAssetServiceImpl implements FmsAssetService {
         }
         vo.setFirstDeprMonth(actual.toString());
         boolean inUse = ObjUtil.equal(asset.getStatus(), FmsAssetDO.STATUS_IN_USE);
-        vo.setMissedMonths(inUse && actual.isAfter(planned)
+        // 填了“进入系统前已折旧月数”，说明用户已经自己把之前的折旧补进去了，不再提醒
+        vo.setMissedMonths(inUse && asset.getInitDeprMonths() == 0 && actual.isAfter(planned)
                 ? (int) java.time.temporal.ChronoUnit.MONTHS.between(planned, actual) : 0);
         vo.setStatus(asset.getStatus());
         vo.setDisposeDate(asset.getDisposeDate());
