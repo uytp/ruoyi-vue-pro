@@ -145,6 +145,11 @@ public class FmsClosingVoucherServiceImpl implements FmsClosingVoucherService {
     @LogRecord(type = FMS_CLOSING_TYPE, subType = FMS_CLOSING_VOUCHER_GENERATE_SUB_TYPE,
             bizNo = "{{#generateReqVO.accountSetId}}", success = FMS_CLOSING_PROFIT_LOSS_VOUCHER_GENERATE_SUCCESS)
     public Long generateProfitLossVoucher(FmsProfitLossGenerateReqVO generateReqVO, Long userId) {
+        return doGenerateProfitLossVoucher(generateReqVO, userId, null);
+    }
+
+    private Long doGenerateProfitLossVoucher(FmsProfitLossGenerateReqVO generateReqVO, Long userId,
+            Map<Long, Deque<Integer>> batchNumbers) {
         // 1.1 校验当前会计期间
         validateCurrentPeriod(generateReqVO.getAccountSetId(), generateReqVO.getMonth(), userId);
         // 1.2 校验期间未结账
@@ -162,8 +167,8 @@ public class FmsClosingVoucherServiceImpl implements FmsClosingVoucherService {
         List<FmsClosingVoucherDO> existingVouchers = closingVoucherMapper.selectListByClosingIdAndPeriod(
                 closing.getId(), LocalDateTimeUtils.getMonthBeginTime(month),
                 LocalDateTimeUtils.endOfMonth(LocalDateTimeUtils.getMonthBeginTime(month)));
-        Map<Long, Deque<Integer>> reusableNumbers = deleteExistingClosingVouchers(
-                generateReqVO.getAccountSetId(), existingVouchers, userId);
+        Map<Long, Deque<Integer>> reusableNumbers = mergeReusableNumbers(deleteExistingClosingVouchers(
+                generateReqVO.getAccountSetId(), existingVouchers, userId), batchNumbers);
         List<FmsSubjectDO> subjects = subjectService.getSubjectList(
                 generateReqVO.getAccountSetId(), null, userId);
         Set<Long> parentIds = subjects.stream().map(FmsSubjectDO::getParentId)
@@ -232,6 +237,11 @@ public class FmsClosingVoucherServiceImpl implements FmsClosingVoucherService {
             bizNo = "{{#generateReqVO.accountSetId}}", success = FMS_CLOSING_SCHEME_VOUCHER_GENERATE_SUCCESS)
     public Long generateClosingSchemeVoucher(
             FmsClosingSchemeGenerateReqVO generateReqVO, Long userId) {
+        return doGenerateClosingSchemeVoucher(generateReqVO, userId, null);
+    }
+
+    private Long doGenerateClosingSchemeVoucher(FmsClosingSchemeGenerateReqVO generateReqVO, Long userId,
+            Map<Long, Deque<Integer>> batchNumbers) {
         // 1.1 校验当前会计期间
         FmsAccountSetDO accountSet = validateCurrentPeriod(
                 generateReqVO.getAccountSetId(), generateReqVO.getMonth(), userId);
@@ -255,8 +265,8 @@ public class FmsClosingVoucherServiceImpl implements FmsClosingVoucherService {
         LocalDateTime monthBeginTime = LocalDateTimeUtils.getMonthBeginTime(month);
         List<FmsClosingVoucherDO> existingVouchers = closingVoucherMapper.selectListByClosingIdAndPeriod(
                 closing.getId(), monthBeginTime, LocalDateTimeUtils.endOfMonth(monthBeginTime));
-        Map<Long, Deque<Integer>> reusableNumbers = deleteExistingClosingVouchers(
-                generateReqVO.getAccountSetId(), existingVouchers, userId);
+        Map<Long, Deque<Integer>> reusableNumbers = mergeReusableNumbers(deleteExistingClosingVouchers(
+                generateReqVO.getAccountSetId(), existingVouchers, userId), batchNumbers);
 
         // 3. 计算结转金额并校验非零
         Map<Long, FmsLedgerSubjectBalanceRespVO> balanceMap = ObjUtil.equal(closing.getTimeType(), FmsClosingTimeTypeEnum.YEAR_BEGIN.getType())
@@ -336,7 +346,9 @@ public class FmsClosingVoucherServiceImpl implements FmsClosingVoucherService {
             existingVouchers.addAll(closingVoucherMapper.selectListByClosingIdAndPeriod(
                     closing.getId(), monthBeginTime, LocalDateTimeUtils.endOfMonth(monthBeginTime)));
         }
-        deleteExistingClosingVouchers(generateReqVO.getAccountSetId(), existingVouchers, userId);
+        // 旧凭证号放进共用号码池，下面逐个重新生成时按顺序复用，避免出现断号
+        Map<Long, Deque<Integer>> batchNumbers = deleteExistingClosingVouchers(
+                generateReqVO.getAccountSetId(), existingVouchers, userId);
 
         // 3. 在同一事务中生成全部结转凭证
         List<Long> voucherIds = new ArrayList<>();
@@ -346,11 +358,11 @@ public class FmsClosingVoucherServiceImpl implements FmsClosingVoucherService {
             try {
                 if (profitLoss) {
                     FmsProfitLossGenerateReqVO profitLossReqVO = BeanUtils.toBean(generateReqVO, FmsProfitLossGenerateReqVO.class);
-                    voucherIds.add(generateProfitLossVoucher(profitLossReqVO, userId));
+                    voucherIds.add(doGenerateProfitLossVoucher(profitLossReqVO, userId, batchNumbers));
                 } else {
                     FmsClosingSchemeGenerateReqVO schemeReqVO = BeanUtils.toBean(generateReqVO, FmsClosingSchemeGenerateReqVO.class);
                     schemeReqVO.setId(closing.getId());
-                    voucherIds.add(generateClosingSchemeVoucher(schemeReqVO, userId));
+                    voucherIds.add(doGenerateClosingSchemeVoucher(schemeReqVO, userId, batchNumbers));
                 }
             } catch (ServiceException ex) {
                 // 批量生成时，余额为零的方案无需生成凭证，继续处理其他方案
@@ -369,6 +381,19 @@ public class FmsClosingVoucherServiceImpl implements FmsClosingVoucherService {
      * @param closingVouchers 结账凭证关联列表
      * @param userId 用户编号
      */
+    /**
+     * 合并可复用的凭证号：批量生成时使用共用号码池；单独生成时用自己刚删掉的旧凭证号
+     */
+    private Map<Long, Deque<Integer>> mergeReusableNumbers(Map<Long, Deque<Integer>> own,
+            Map<Long, Deque<Integer>> batchNumbers) {
+        if (batchNumbers == null) {
+            return own;
+        }
+        own.forEach((wordId, numbers) ->
+                batchNumbers.computeIfAbsent(wordId, key -> new ArrayDeque<>()).addAll(numbers));
+        return batchNumbers;
+    }
+
     /**
      * 删除重新生成前的旧结转凭证，并返回可复用的凭证号（按凭证字分组、从小到大），避免重新生成后出现断号
      */
