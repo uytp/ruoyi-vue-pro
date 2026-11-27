@@ -267,9 +267,15 @@ public class FmsCostServiceImpl implements FmsCostService {
         items.sort(Comparator.comparing((FmsCostSheetItemDO i) -> i.getProductCode() == null ? "" : i.getProductCode())
                 .thenComparing(FmsCostSheetItemDO::getProductItemId));
         int allocMethod = setting.getOverheadAllocMethod();
+        // 新月份第一次计算时还没有产品行、分摊标准都是 0：不报错，先把产品行带出来保存，制造费用暂不分摊并提醒用户填写
         if (!FmsCostCalculator.allocateOverhead(items, overheadPool, allocMethod)) {
-            throw exception(COST_ALLOC_BASE_EMPTY, overheadPool.toPlainString(),
-                    FmsCostCalculator.allocBaseName(allocMethod));
+            if (items.isEmpty()) {
+                warnings.add("本期制造费用 " + overheadPool.toPlainString()
+                        + " 元找不到可以分摊的产品：直接材料、直接人工的分录需要选上产品，才会出现产品行");
+            } else {
+                warnings.add("本期制造费用 " + overheadPool.toPlainString() + " 元还没有分摊：请先填写各产品的【"
+                        + FmsCostCalculator.allocBaseName(allocMethod) + "】，再点【计算成本】");
+            }
         }
         for (FmsCostSheetItemDO item : items) {
             BigDecimal available = FmsCostCalculator.computeItem(item, setting.getWipMethod(),
@@ -521,6 +527,15 @@ public class FmsCostServiceImpl implements FmsCostService {
             throw exception(COST_SHEET_VOUCHER_GENERATED);
         }
         List<FmsCostSheetItemDO> items = sheetItemMapper.selectListBySheetId(sheet.getId());
+        // 制造费用必须分摊完才能生成凭证，否则制造费用科目会留下余额
+        BigDecimal allocatedTotal = ZERO;
+        for (FmsCostSheetItemDO item : items) {
+            allocatedTotal = allocatedTotal.add(nvl(item.getAllocOverhead()));
+        }
+        if (nvl(sheet.getOverheadTotal()).subtract(allocatedTotal).abs().compareTo(new BigDecimal("0.005")) > 0) {
+            throw exception(COST_OVERHEAD_NOT_ALLOCATED, nvl(sheet.getOverheadTotal()).toPlainString(),
+                    allocatedTotal.toPlainString());
+        }
         Map<Long, FmsSubjectDO> subjectMap = new HashMap<>();
         for (FmsSubjectDO subject : subjectService.getSubjectList(accountSetId, null, userId)) {
             subjectMap.put(subject.getId(), subject);

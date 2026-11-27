@@ -230,8 +230,8 @@ public interface ErrorCodeConstants {
     ErrorCode COST_PERIOD_CLOSED = new ErrorCode(1_052_110_002, "该会计期间已结账，不能计算成本或生成成本凭证");
     ErrorCode COST_SHEET_VOUCHER_GENERATED = new ErrorCode(1_052_110_003, "本期成本凭证已生成，请先撤销凭证再重新计算");
     ErrorCode COST_SHEET_NOT_EXISTS = new ErrorCode(1_052_110_004, "本期还没有成本计算单，请先计算成本");
-    ErrorCode COST_ALLOC_BASE_EMPTY = new ErrorCode(1_052_110_005,
-            "本期制造费用 {} 元需要分配，但所有产品的分配标准（{}）都是 0，请先填写");
+    ErrorCode COST_OVERHEAD_NOT_ALLOCATED = new ErrorCode(1_052_110_005,
+            "本期制造费用 {} 元还没有分摊完（已分摊 {} 元），请先填写各产品的分摊依据后重新计算成本");
     ErrorCode COST_SALES_QTY_EXCEED = new ErrorCode(1_052_110_006, "产品【{}】销售数量 {} 超过可售数量 {}");
     ErrorCode COST_NOTHING_TO_GENERATE = new ErrorCode(1_052_110_007, "本期没有可生成凭证的成本数据");
     ErrorCode COST_PERIOD_INVALID = new ErrorCode(1_052_110_008, "会计期间格式不正确，应为 yyyy-MM");
