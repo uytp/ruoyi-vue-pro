@@ -285,4 +285,23 @@ public interface ErrorCodeConstants {
     ErrorCode ASSET_DEPRECIATION_NO_EXPENSE = new ErrorCode(1_052_112_024, "类别【{}】的折旧科目设置不完整，请先到类别管理里补全");
     ErrorCode ASSET_START_TOO_EARLY = new ErrorCode(1_052_112_025, "这个资产应当从 {} 开始折旧，但 {} 的折旧已经计提过了。请先撤销 {} 及之后月份的折旧再保存；旧资产请把启用日期照实填，用“进入系统前已折旧月数 / 累计折旧”录入已提部分");
 
+    // ========== 发票与增值税 1-052-113-000 ==========
+    ErrorCode INVOICE_NOT_EXISTS = new ErrorCode(1_052_113_000, "发票不存在");
+    ErrorCode INVOICE_DUPLICATE = new ErrorCode(1_052_113_001, "同一方向下发票代码 {} 号码 {} 已经登记过了");
+    ErrorCode INVOICE_VALUE_INVALID = new ErrorCode(1_052_113_002, "不含税金额不能为 0，税率必须在 0 到 100 之间");
+    ErrorCode INVOICE_TAX_MISMATCH = new ErrorCode(1_052_113_003, "税额和“金额 × 税率”相差超过 0.10 元，按税率算应为 {}，请核对");
+    ErrorCode INVOICE_VOIDED = new ErrorCode(1_052_113_004, "发票 {} 已作废，不能修改，请先恢复");
+    ErrorCode INVOICE_CERTIFY_NOT_APPLICABLE = new ErrorCode(1_052_113_005, "只有正常状态的进项增值税专用发票才需要认证抵扣：{}");
+    ErrorCode INVOICE_CERTIFY_PERIOD_INVALID = new ErrorCode(1_052_113_006, "认证所属期格式应为 yyyy-MM，且不能早于开票月份 {}");
+    ErrorCode INVOICE_PERIOD_LOCKED = new ErrorCode(1_052_113_007, "这张发票影响 {} 的增值税，而 {} 已经生成了税务凭证，请先到“增值税申报”撤销它");
+    ErrorCode INVOICE_NOT_VOIDED = new ErrorCode(1_052_113_008, "发票 {} 没有作废，不需要恢复");
+    ErrorCode TAX_PERIOD_INVALID = new ErrorCode(1_052_113_009, "税款所属期格式不正确，应为 yyyy-MM");
+    ErrorCode TAX_SETTING_INVALID = new ErrorCode(1_052_113_010, "税率必须在 0 到 100 之间，留抵税额不能为负数，开始月份格式应为 yyyy-MM");
+    ErrorCode TAX_SUBJECT_MISSING = new ErrorCode(1_052_113_011, "没有找到科目 {}（{}），请先在科目设置里添加");
+    ErrorCode TAX_GENERATED = new ErrorCode(1_052_113_012, "{} 的税务凭证已经生成，请先撤销再重新生成");
+    ErrorCode TAX_NOT_GENERATED = new ErrorCode(1_052_113_013, "{} 还没有生成税务凭证");
+    ErrorCode TAX_NOTHING_TO_GENERATE = new ErrorCode(1_052_113_014, "{} 没有需要结转的增值税和附加税（应纳税额为 0，可能是留抵或没有发票）");
+    ErrorCode TAX_PERIOD_BEFORE_START = new ErrorCode(1_052_113_015, "{} 早于开始月份 {}，请先到“税务参数”里调整开始月份");
+    ErrorCode TAX_PERIOD_TOO_FAR = new ErrorCode(1_052_113_016, "开始月份到 {} 超过 120 个月，请把税务参数里的开始月份调近一点");
+
 }
